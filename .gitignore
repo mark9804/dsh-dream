@@ -150,3 +150,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Local dream development data (never commit real memories)
+.dream-data/
+dsh-memory-backup/
+
+# Generated synthetic tests and local SDK inspection material
+tests/.tmp/
+tests/.inspect/
+# Keep test sources versioned; only generated test artifacts are ignored above.

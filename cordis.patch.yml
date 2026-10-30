@@ -1,0 +1,6 @@
+# Configure explicit session and data paths before enabling this row.
+- insert:
+    - id: dsh-dream
+      name: dsh-dream
+      disabled: true
+      config: {}
