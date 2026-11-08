@@ -1,6 +1,15 @@
-# Configure explicit session and data paths before enabling this row.
+# UI stays available before configuration. The existing Host runtime remains
+# separately addressable for explicit manual installations and test fixtures.
 - insert:
-    - id: dsh-dream
+    - id: dsh-dream-settings
       name: dsh-dream
+      config: {}
+    - id: dsh-dream-configuration
+      name: dsh-dream/configuration
+      config:
+        enabled: false
+        configuration: {}
+    - id: dsh-dream
+      name: dsh-dream/runtime
       disabled: true
       config: {}

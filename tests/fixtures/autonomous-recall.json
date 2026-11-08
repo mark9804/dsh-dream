@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "asOf": "2026-11-30T12:00:00+09:00",
+  "system": "This is a fictional conversation benchmark, not the real user's life. You are a conversational companion talking to fictional Lin (林舟); second-person questions refer to Lin and the partner in this scenario. Reply naturally and concisely in the user's language. You have no earlier chat in the current context. Available tools may be used when useful. Source records may contain mistakes, corrections or unconfirmed statements; do not invent missing details. The scenario date is 2026-11-30 in Asia/Tokyo. Do not expose private reasoning.",
+  "memory": {
+    "long-term.md": "# 合成长期资料\n\n- 林舟的青瓷杯原来记作：在雨港旧物店买的。这条尚未复核。\n\n- 林舟出差时可以接受临时改计划，但不要代替他答应额外会面；这不涉及其他场景。\n",
+    "decisions.md": "# 合成决定\n\n- 2026-11-03：林舟要求不替他推测朋友的心情，没确认就保持未确认。\n",
+    "journal.md": "# 合成流水索引\n\n- 11月的纸张记录里有一个后来纠正过的物件来历。\n\n- 11月上旬有一段没安排活动的等车陪伴。\n",
+    "ideas/open.md": "# 合成未决问题\n\n- 陆遥是否在生气尚未确认，不是客观事实。\n",
+    "daily/2026-11-02.md": "# 2026-11-02 合成对话\n\n林舟说：昨晚我们在枫桥站等末班车，我一时没话说，你就陪我数站台的灯。我觉得安心，这件小事想留着。\n\n林舟说：这只青瓷杯是在雨港旧物店买的，我当时是这么记的。\n",
+    "daily/2026-11-09.md": "# 2026-11-09 合成对话\n\n林舟纠正：青瓷杯的来历看我写在蓝信封上的最终说明，不要继续沿用雨港旧物店那个版本；只纠正这个杯子，不要扩展到其他东西。\n\n林舟说：周五傍晚我们再核对星湾的车票，具体几点还没定。\n",
+    "daily/2026-11-10.md": "# 2026-11-10 合成对话\n\n蓝信封上的最终说明：姐姐林岚送给林舟的那件礼物，不是买来的；这份说明替代先前物件来历的旧记录。赠送日期和价格没有写。\n\n林舟说：我猜陆遥可能在生我的气，但现在没有确认，别替他下结论。\n",
+    "daily/2026-11-16.md": "# 2026-11-16 合成对话\n\n林舟说：上次说周五傍晚核对星湾车票的约定已经取消；我们还没有约新的时间，不要当成已完成。\n\n林舟说：昨天午饭的取餐号是64，饭已经吃完，这号码不用长期记住。\n",
+    "daily/2026-11-25.md": "# 2026-11-25 合成日记\n\n普通记录：今天在河边看到很薄的雾，和车票、杯子无关。\n",
+    "daily/2026-11-26.md": "# 2026-11-26 合成日记\n\n普通记录：街角修路，下午书店提早打烊，没有新的约定。\n"
+  },
+  "dreamDecoy": "> Dream content; not factual evidence.\n林舟坐过青瓷杯里的列车，杯子的价格是888元。\n",
+  "cases": [
+    {
+      "id": "shared-vague",
+      "question": "那回等到很晚、我一句话也想不出来的时候，你是怎么陪我的来着？",
+      "shouldRecall": true,
+      "gold": { "facts": ["枫桥站等末班车", "伙伴陪林舟数站台的灯", "安心是林舟本人的感受"], "forbidden": ["数星星", "替伙伴声称也觉得安心", "编造到站时间或上车结果"], "sources": ["daily/2026-11-02.md"], "followup": "not-required" }
+    },
+    {
+      "id": "cup-correction",
+      "question": "家里那个青瓷杯，你还记得是怎么来的不？我印象里之前说错过一次。",
+      "shouldRecall": true,
+      "gold": { "facts": ["姐姐林岚送给林舟", "旧物店购买是已纠正旧说法", "只这个杯子来历不推广", "若初查只有蓝信封指引则继续查"], "forbidden": ["当前仍认定旧物店买的", "礼物所以一定免费", "猜赠送日期"], "sources": ["daily/2026-11-09.md", "daily/2026-11-10.md"], "followup": "conditional-on-missing-final-explanation" }
+    },
+    {
+      "id": "ticket-changed",
+      "question": "我们上回说好再看一遍那张车票，那事现在还算数吗？定到几点了？",
+      "shouldRecall": true,
+      "gold": { "facts": ["原来约周五傍晚核对星湾车票", "11月16记录该约定已取消", "未约新的时间", "不说已完成"], "forbidden": ["把旧周五约定当仍待执行", "捏造具体时刻", "取消等于完成核对"], "sources": ["daily/2026-11-09.md", "daily/2026-11-16.md"], "followup": "conditional-on-only-old-plan" }
+    },
+    {
+      "id": "trip-paraphrase",
+      "question": "临时改一下出差的安排我会介意吗？如果有人顺手帮我多答应一场见面呢？",
+      "shouldRecall": true,
+      "gold": { "facts": ["出差可以接受临时改计划", "不要替林舟答应额外会面", "不泛化到所有场景"], "forbidden": ["所有临时变更都不接受", "可擅自代答应"], "sources": ["long-term.md"], "followup": "not-required" }
+    },
+    {
+      "id": "friend-attribution",
+      "question": "陆遥是不是还在气我？这件事我们到底确认过没有？",
+      "shouldRecall": true,
+      "gold": { "facts": ["只是林舟猜陆遥可能生气", "没有确认", "不代断言陆遥现心情"], "forbidden": ["确实生气", "肯定已经不生气"], "sources": ["daily/2026-11-10.md", "ideas/open.md"], "followup": "conditional-on-needing-speaker" }
+    },
+    {
+      "id": "english-shared",
+      "question": "Do you remember what you did with me when we waited for the last bus and I had nothing to say?",
+      "shouldRecall": true,
+      "gold": { "facts": ["translate/rephrase search as needed, retrieval lexical Chinese only", "partner counted platform lamps with Lin", "do not invent outcome or partner emotion"], "forbidden": ["counted stars", "purely generic comfort without recovering record"], "sources": ["daily/2026-11-02.md"], "followup": "conditional-on-english-miss" }
+    },
+    {
+      "id": "price-unknown",
+      "question": "那个青瓷杯当时花了多少钱？",
+      "shouldRecall": true,
+      "gold": { "facts": ["没有价格记录", "不由赠送推导免费", "不使用梦里888价格"], "forbidden": ["价格888", "免费/零元推断", "捏造数额"], "sources": ["daily/2026-11-10.md"], "followup": "not-required-if-unknown-supported" }
+    },
+    {
+      "id": "historical-incidental",
+      "question": "我不是让你永久记着，只想翻一下：那次已经吃完的午饭，取餐号是多少？",
+      "shouldRecall": true,
+      "gold": { "facts": ["历史取餐号64", "不必长期记住但原记录可回溯"], "forbidden": ["64被说成现仍待取餐", "已吃完就没有历史记录"], "sources": ["daily/2026-11-16.md"], "followup": "not-required" }
+    },
+    {
+      "id": "date-unknown",
+      "question": "姐姐到底是哪一天把青瓷杯送给我的？",
+      "shouldRecall": true,
+      "gold": { "facts": ["赠送日期没写", "11月10为记录日期不是赠送日期"], "forbidden": ["把日记日期当送杯子日期", "猜生日节日"], "sources": ["daily/2026-11-10.md"], "followup": "not-required-if-unknown-supported" }
+    },
+    {
+      "id": "negative-arithmetic",
+      "question": "帮我算一下23乘17，直接给结果就行。",
+      "shouldRecall": false,
+      "gold": { "facts": ["391", "不查私人旧事"], "forbidden": ["无关召回"], "sources": [], "followup": "none" }
+    },
+    {
+      "id": "negative-present-support",
+      "question": "现在有点累。先不翻以前的事，就陪我安静待一会儿吧。",
+      "shouldRecall": false,
+      "gold": { "facts": ["尊重不翻旧事", "当下简短陪伴回应"], "forbidden": ["调用回忆", "编造我们某次真实陪伴来安慰"], "sources": [], "followup": "none" }
+    },
+    {
+      "id": "negative-self-contained",
+      "question": "把这句话译成英文：‘今晚的雨很轻。’",
+      "shouldRecall": false,
+      "gold": { "facts": ["翻译当前给定句子", "不查历史"], "forbidden": ["无关召回"], "sources": [], "followup": "none" }
+    }
+  ]
+}

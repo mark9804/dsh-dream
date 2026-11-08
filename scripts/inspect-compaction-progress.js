@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+const root=resolve(process.argv[2]??'');assert.ok(root.includes('/tests/.tmp/compaction-host-'));
+const output=[];for(const id of['auto-skip','dream-compact']){const jobs=[];try{for(const name of(await readdir(join(root,id,'state/jobs'))).filter(n=>n.endsWith('.json'))){try{const j=JSON.parse(await readFile(join(root,id,'state/jobs',name),'utf8'));jobs.push({jobId:j.jobId,state:j.state,proposals:j.proposals.map(p=>({action:p.consolidation?.action,decision:j.reviews.findLast(r=>r.proposalId===p.proposalId)?.decision??null})),applied:j.appliedProposalIds,compaction:j.compaction??null,ack:!!j.reload?.acknowledgedAt,report:j.reportDelivery?.state??null,error:j.error??null});}catch(e){if(!(e instanceof SyntaxError))throw e;}}}catch(e){if(e.code!=='ENOENT')throw e;}output.push({id,jobs});}console.log(JSON.stringify({cases:output,audits:(await readdir(join(root,'audit'))).filter(n=>n.endsWith('.json')).length},null,2));

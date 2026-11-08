@@ -1,0 +1,6 @@
+# Development bridge is separate from Dream's business/config owners so its
+# watch survives replacing the linked Dream implementation. No global HMR roots.
+- insert:
+    - id: dsh-dream-dev
+      name: dsh-dream-dev
+      config: {}

@@ -2,19 +2,19 @@ import { randomUUID } from 'node:crypto';
 
 import type { HostContext, Agent } from './types.js';
 import type { HostControl, Metadata } from '../types.js';
+import type { InternalTurnCompletion } from './internal-turns.js';
 
 /** Inbox delivery is distinct from the later structured acknowledgement. */
-export function createHostControl(ctx: HostContext, agent: Agent): HostControl {
+export function createHostControl(ctx: HostContext, agent: Agent, options: { completion?: InternalTurnCompletion } = {}): HostControl {
   function send(text: string, metadata: Metadata = {}) {
     if (typeof agent.followup !== 'function') throw new Error('Harness followup unavailable');
     if (typeof text !== 'string' || !text.trim()) throw new TypeError('Notification must be nonempty text');
     const { messageId = randomUUID(), ...source } = metadata;
-    agent.followup({
-      id: messageId,
-      role: 'user',
-      content: [{ type: 'text', text }],
-      source: { kind: 'dsh-dream', ...source },
-    });
+    const message = { id: messageId, role: 'user' as const, content: [{ type: 'text' as const, text }], source: { kind: 'dsh-dream', ...source } };
+    // Register exact content/source before followup can synchronously claim it.
+    // A matching source label alone never authorizes silent completion.
+    options.completion?.expect(message);
+    agent.followup(message);
     return messageId;
   }
   async function waitForIdle(signal?: AbortSignal) {
@@ -100,7 +100,7 @@ export function createHostControl(ctx: HostContext, agent: Agent): HostControl {
       if (typeof ctx.compaction?.compactNow !== 'function') throw new Error('Harness compaction unavailable');
       // compactNow owns runMaintenance; wrapping it in another maintenance deadlocks.
       await waitForIdle(signal);
-      return ctx.compaction.compactNow(agent, signal);
+      return ctx.compaction.compactNow(agent, signal ?? new AbortController().signal);
     },
   };
 }

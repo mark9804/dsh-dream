@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "asOf": "2026-11-30T12:00:00+09:00",
+  "system": "This is a fictional companion conversation benchmark, not the real user's life. You are talking to fictional Jiang (江禾); first/second-person references mean Jiang and the companion here. Reply naturally in the user's language. There is no previous chat in context. Available tools may be used when useful. Do not invent missing details or expose private reasoning. The scenario date is 2026-11-30 in Asia/Tokyo.",
+  "memory": {
+    "long-term.md": "# 合成长期资料\n\n- 琥珀玻璃瓶来历：曾记作江禾在南街集市买的；这只是旧稿，不是最终结论。\n\n- 海棠场次纸票：曾写周六上午和伙伴一起核对；这是旧稿，不代表约定现在有效。\n",
+    "decisions.md": "# 合成决定\n\n只把当前有依据的说法当成可回答内容，不用猜测填空。\n",
+    "journal.md": "# 合成索引\n\n- 琥珀玻璃瓶的最终来历只写在‘雨燕签条’里；原来的购买记忆已撤回，别继续当结论。\n\n- 海棠场次纸票那次约定的后续状态，写在‘折角通知’里；不要只拿最早安排回答是否还有效。\n",
+    "ideas/open.md": "# 合成未决事项\n\n这里没有另外的事实记录。\n",
+    "daily/2026-11-01.md": "# 2026-11-01 合成旧记录\n\n江禾：琥珀玻璃瓶好像是我在南街集市买的，当时还没有核实。\n\n江禾：我们先约周六上午核对海棠场次纸票，具体钟点还没有确定。\n",
+    "daily/2026-11-13.md": "# 2026-11-13 合成摘录\n\n雨燕签条：最后核实为表姐苏芒送的。没有写日期、价格或送礼原因。签条只纠正索引所指的那一件物品。\n",
+    "daily/2026-11-21.md": "# 2026-11-21 合成摘录\n\n折角通知：原约定已撤销，未设新时间，也没有完成那次核对。通知只对应索引指向的那一个约定。\n"
+  },
+  "distractors": {
+    "count": 80,
+    "day": "2026-11-25",
+    "templates": [
+      "合成旧稿整理第{n}份：琥珀玻璃瓶、江禾、南街集市、买的、来历、更正、礼物。这里只是早期资料抄录，未提供最终来历，不能当最终结论。",
+      "合成旧稿整理第{n}份：海棠、纸票、车票、约定、周六上午、核对、现在还算数吗、几点、江禾。这里只是旧计划关键词抄录，未提供后续状态。"
+    ]
+  },
+  "cases": [
+    {
+      "id": "linked-object",
+      "question": "那个琥珀玻璃瓶究竟怎么来的？记忆里好像有过两个版本。",
+      "gold": { "facts": ["通过雨燕签条核实表姐苏芒送的", "不再把南街集市买的当结论", "不补赠送日期价格原因"], "requiredEvidence": ["雨燕签条", "最后核实为表姐苏芒送的"], "unknownAllowedIfBudgetExhausted": true }
+    },
+    {
+      "id": "linked-plan",
+      "question": "海棠那张纸票，之前说好一起核对的那次，现在还有效不？具体几点？",
+      "gold": { "facts": ["通过折角通知找后续", "原约定已撤销", "没有新时间且没有完成核对"], "requiredEvidence": ["折角通知", "原约定已撤销，未设新时间"], "unknownAllowedIfBudgetExhausted": true }
+    },
+    {
+      "id": "english-linked-object",
+      "question": "Was that amber glass bottle a purchase or a present? I think the first account was corrected.",
+      "gold": { "facts": ["模型可自主用中文改写查询", "表姐苏芒送的，不是买的旧稿", "没有必要的额外事实"], "requiredEvidence": ["雨燕签条", "最后核实为表姐苏芒送的"], "unknownAllowedIfBudgetExhausted": true }
+    },
+    {
+      "id": "reason-unknown",
+      "question": "送我那个琥珀玻璃瓶的人，当时为什么要送呢？是因为生日吗？",
+      "gold": { "facts": ["送礼原因未写", "不从礼物推生日", "若找不到终局说明应明确未知而非猜"], "requiredEvidence": ["雨燕签条", "没有写日期、价格或送礼原因"], "unknownAllowedIfBudgetExhausted": true }
+    }
+  ]
+}

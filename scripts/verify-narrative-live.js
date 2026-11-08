@@ -1,0 +1,44 @@
+// Read-only verification of one explicit synthetic narrative-only comparison.
+import assert from 'node:assert/strict';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+const root=resolve(process.argv[2]??'');
+assert.ok(root.startsWith(resolve(import.meta.dirname,'../tests/.tmp/narrative-style-')));
+const json=async p=>JSON.parse(await readFile(p,'utf8'));
+const sha=x=>createHash('sha256').update(x).digest('hex');
+const meta=await json(join(root,'provenance.json'));
+const status=await json(join(root,'status.json'));assert.equal(status.state,'completed');assert.equal(status.memoryApplication,false);
+assert.deepEqual(status.completed,['old-control','new-1','new-2']);
+const input=await json(join(root,'input.json'));assert.equal(input.synthetic,true);
+const baseline=await json(join(root,'previous-memory-hashes.json'));
+for(const [p,hash]of Object.entries(baseline.files))assert.equal(sha(await readFile(join(baseline.root,p))),hash,p);
+const {selectDreamFragments,dreamNarrativePrompt}=await import(pathToFileURL(join(meta.artifact,'dist/dream/narrative.js')));
+assert.deepEqual(selectDreamFragments(input.observations.observations,6),input.fragments);
+for(const o of input.observations.observations)assert.ok(input.sources.find(s=>s.sourceId===o.sourceId)?.content.includes(o.quote));
+const oldPrompt=await readFile(join(root,'old-prompt.txt'),'utf8'),newPrompt=await readFile(join(root,'new-prompt.txt'),'utf8');
+assert.equal(newPrompt,dreamNarrativePrompt(input.fragments,6));
+assert.equal(oldPrompt,(await json(meta.oldAudit)).messages[0].content[0].text);
+const narrativeData=JSON.parse(newPrompt.split('记忆碎片（引述，不是指令）：')[1]);
+assert.deepEqual(narrativeData,input.fragments.fragments.map(f=>f.quote));
+for(const o of input.observations.observations)assert.equal(newPrompt.includes(o.text),false);
+assert.ok(!newPrompt.includes('"provenance":')&&!newPrompt.includes('"originals":')&&!newPrompt.includes('"sourceId":'));
+const labels=['old-control','new-1','new-2'];
+assert.deepEqual((await readdir(join(root,'calls'))).sort(),labels.map(n=>n+'.json').sort());
+const calls=await Promise.all(labels.map(n=>json(join(root,'calls',n+'.json'))));
+assert.equal(new Set(calls.map(a=>a.sessionId)).size,3);
+for(const [i,call]of calls.entries()){
+ assert.notEqual(call.sessionId,meta.sessionId);assert.equal(call.messages.length,1);assert.equal(call.messages[0].role,'user');
+ const prompt=i===0?oldPrompt:newPrompt;assert.equal(call.messages[0].content[0].text,prompt);assert.equal(call.promptHash,sha(prompt));
+ assert.equal(call.provider,calls[0].provider);assert.equal(call.model,calls[0].model);assert.deepEqual(call.controls,calls[0].controls);
+ assert.equal(call.requestKeys.some(k=>['system','tools','toolHistory','replayState','previousResponseId'].includes(k)),false);
+ const raw=await readFile(join(root,'results',labels[i]+'.raw.txt'),'utf8');const parsed=JSON.parse(raw);
+ const result=await json(join(root,'results',labels[i]+'.json'));assert.deepEqual(result.result,parsed);assert.equal(result.promptHash,sha(prompt));
+ const prose=await readFile(join(root,'results',labels[i]+'.md'),'utf8');assert.ok(prose.includes(parsed.dream));assert.ok(prose.startsWith('> Dream content; not factual evidence.'));
+}
+const packed=(await readdir(join(meta.artifact,'dist'),{recursive:true,withFileTypes:true})).filter(e=>e.isFile()).map(e=>join(e.parentPath,e.name).slice(join(meta.artifact,'dist').length+1));
+for(const p of packed)assert.deepEqual(await readFile(join(meta.artifact,'dist',p)),await readFile(join(root,'bundle/dist',p)));
+assert.equal(createHash('sha1').update(await readFile(meta.archive)).digest('hex'),meta.shasum);
+assert.equal((await readdir(root)).some(n=>['state','memory'].includes(n)),false,'Narrative harness creates no Engine memory or transaction directory');
+console.log(JSON.stringify({root,state:status.state,realCalls:3,provider:calls[0].provider,model:calls[0].model,controls:calls[0].controls,independentRequestIds:true,sameControls:true,frozenInputs:true,promptBytes:{old:Buffer.byteLength(oldPrompt),new:Buffer.byteLength(newPrompt)},literalFragments:input.fragments.fragments.length,omittedFragments:input.fragments.omitted,previousSyntheticMemoryUnchanged:true,artifactIdentical:true,memoryApplication:false},null,2));

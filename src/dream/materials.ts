@@ -72,9 +72,10 @@ export async function collectSnapshot(files: Files, config: DreamConfig, scope: 
 export function inputFingerprint(snapshot: Snapshot) {
   const { scope } = snapshot;
   const sources = snapshot.sources.map(s => ({ sourceId: s.sourceId, path: s.path, role: s.role,
-    content: s.content, writable: s.writable, sensitivity: s.sensitivity, protectedText: s.protectedText }));
+    content: s.content, writable: s.writable, sensitivity: s.sensitivity, protectedText: s.protectedText,
+    ...(s.originals ? { originals: s.originals } : {}) }));
   sources.sort((a, b) => a.sourceId.localeCompare(b.sourceId));
-  return createHash('sha256').update(JSON.stringify({ policyVersion: 1, scope: {
+  return createHash('sha256').update(JSON.stringify({ policyVersion: 2, scope: {
     scopeId: scope.scopeId, agentId: scope.agentId, sessionId: scope.sessionId, memoryRootId: scope.memoryRootId,
   }, sources })).digest('hex');
 }

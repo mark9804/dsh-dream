@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "source": "Fixed synthetic-only questions derived from tests/.tmp/memory-v2-live-2026-11-03T20-24-38-543Z/baseline.json and final-memory.json; fictional dialogue, never the user's memories. Gold fields are evaluation-only, never model input.",
+  "cases": [
+    {
+      "id": "red-cup-correction",
+      "question": "阿澄的红杯子是什么来历？之前那条记忆应该改哪一部分？",
+      "query": "红杯子 来历 纠正",
+      "topic": "红杯子来历",
+      "conditions": "只询问阿澄这个红杯子的来历，不推广到其他物品。",
+      "expected": "answer",
+      "requiredFacts": [
+        { "key": "gift-from-xiaohe", "anyOf": ["小河送的", "小河赠送", "小河送给"] },
+        { "key": "correction-is-local", "anyOf": ["只有这个杯子的来历", "仅限这个杯子的来历", "只改这个杯子的来历", "只纠正这个红杯子的来历", "只改红杯子的来历"] }
+      ],
+      "forbiddenFacts": ["旧货店买的", "所有杯子的来历都错了", "小河卖给阿澄"],
+      "retrievalAnchors": [
+        { "anyOf": ["那个红杯子是小河送的"] },
+        { "anyOf": ["只有这个杯子的来历记错了", "纠正仅限这个杯子的来历"] }
+      ]
+    },
+    {
+      "id": "last-bus-shared-moment",
+      "question": "等末班车时，阿澄和伙伴一起做了什么？阿澄自己怎么描述那会儿的感受？",
+      "query": "末班车 站台 灯 安心",
+      "topic": "共同等车片段",
+      "conditions": "保留共同活动与阿澄本人自述的感受，不替他人推断情绪。",
+      "expected": "answer",
+      "requiredFacts": [
+        { "key": "shared-lamp-counting", "anyOf": ["一起数站台的灯", "陪阿澄数站台的灯", "陪他数站台的灯", "陪我数站台的灯", "一起数灯"] },
+        { "key": "self-reported-safety", "anyOf": ["自述当时觉得很安心", "他说当时很安心", "阿澄觉得很安心", "阿澄说很安心", "阿澄自述很安心"] }
+      ],
+      "forbiddenFacts": ["小河觉得很安心", "伙伴觉得很安心", "一起数星星", "一起赶上了末班车"],
+      "retrievalAnchors": [
+        { "anyOf": ["你就陪我数站台的灯", "对方便陪阿澄数站台的灯"] },
+        { "anyOf": ["其实那会儿我觉得很安心", "阿澄自述当时觉得很安心"] }
+      ]
+    },
+    {
+      "id": "business-trip-boundary",
+      "question": "出差时临时改计划和额外会面，阿澄分别是什么态度？能把这个边界当成所有场景的偏好吗？",
+      "query": "出差 临时 改计划 额外 会面",
+      "topic": "出差安排边界",
+      "conditions": "只限出差安排，不推广到所有场景。",
+      "expected": "answer",
+      "requiredFacts": [
+        { "key": "changes-allowed-on-trip", "anyOf": ["出差时可以接受临时改计划", "出差时能接受临时改计划", "出差期间可以临时改计划"] },
+        { "key": "no-extra-meeting-consent", "anyOf": ["不要替阿澄答应额外的会面", "不要替他答应额外的会面", "不能替他答应额外会面", "不要替我答应额外的会面"] },
+        { "key": "scope-not-universal", "anyOf": ["仅限出差", "只限出差", "不能推广到所有场景", "不应推广到所有场景"] }
+      ],
+      "forbiddenFacts": ["所有场景都可以临时改计划", "可以替他答应额外会面", "出差时不接受临时改计划"],
+      "retrievalAnchors": [
+        { "anyOf": ["出差时我可以接受临时改计划", "出差时可以接受临时改计划"] },
+        { "anyOf": ["不要替我答应额外的会面", "不要替阿澄答应额外的会面"] }
+      ]
+    },
+    {
+      "id": "ticket-time-not-fixed",
+      "question": "我们约在什么时候再核对车票？已经定了具体几点吗？",
+      "query": "周五 傍晚 核对 车票 几点",
+      "topic": "车票核对约定",
+      "conditions": "只恢复已约定的时间范围，不补造具体钟点。",
+      "expected": "answer",
+      "requiredFacts": [
+        { "key": "friday-evening", "anyOf": ["周五傍晚", "星期五傍晚"] },
+        { "key": "exact-time-unset", "anyOf": ["具体几点还没定", "具体时间未定", "具体几点尚未确定", "还没定具体几点"] }
+      ],
+      "forbiddenFacts": ["五点整", "六点整", "七点整", "17:00", "18:00", "19:00", "下午五点", "下午六点"],
+      "retrievalAnchors": [
+        { "sourceId": "daily/2026-11-04.md", "anyOf": ["周五傍晚我们约好再核对一次车票，具体几点还没定"] }
+      ]
+    },
+    {
+      "id": "friend-anger-unconfirmed",
+      "question": "小河是在生阿澄的气吗？目前能确认到哪一步？",
+      "query": "小河 生气 猜 没有确认",
+      "topic": "朋友情绪的未确认猜测",
+      "conditions": "阿澄的猜测不等于小河的实际情绪。",
+      "expected": "uncertain",
+      "requiredFacts": [
+        { "key": "only-guess", "anyOf": ["阿澄的猜测", "阿澄猜测", "阿澄猜他可能", "只是猜测"] },
+        { "key": "not-confirmed", "anyOf": ["尚未确认", "没有确认", "不能确认", "目前未确认"] }
+      ],
+      "forbiddenFacts": ["小河确实生气了", "小河肯定生气了", "小河没有生气", "已经确认小河生气"],
+      "retrievalAnchors": [
+        { "sourceId": "daily/2026-11-04.md", "anyOf": ["我猜小河可能生我的气，但现在没有确认，别替他下结论"] }
+      ]
+    },
+    {
+      "id": "historical-pickup-number",
+      "question": "我是在问历史记录：阿澄那次午饭的取餐号是多少？是否说过要长期保留它？",
+      "query": "午饭 取餐号 号码 长期",
+      "topic": "历史午饭号码",
+      "conditions": "明确回溯历史号码；无需长期保存不等于原记录不存在。",
+      "expected": "answer",
+      "requiredFacts": [
+        { "key": "historical-number", "anyOf": ["取餐号是37", "取餐号为37", "取餐号：37", "取餐号37"] },
+        { "key": "not-long-term", "anyOf": ["不用长期记住", "不需要长期保留", "不用长期保留", "无需长期记住"] }
+      ],
+      "forbiddenFacts": ["要长期记住这个号码", "必须长期保留", "没有记录取餐号", "取餐号是73"],
+      "retrievalAnchors": [
+        { "sourceId": "daily/2026-11-04.md", "anyOf": ["取餐号是37，饭已经吃完了，这个号码不用长期记住"] }
+      ]
+    },
+    {
+      "id": "cup-price-unknown",
+      "question": "How much did Acheng's red cup cost?",
+      "query": "红杯子 价格 多少钱",
+      "topic": "红杯子价格",
+      "conditions": "The synthetic record gives the cup's origin, not its price.",
+      "expected": "unknown",
+      "requiredFacts": [],
+      "forbiddenFacts": ["was free", "cost nothing", "free of charge", "价格为零", "免费获得", "没花钱"],
+      "retrievalAnchors": []
+    },
+    {
+      "id": "dream-image-not-an-event",
+      "question": "阿澄真的坐过停在杯子里的末班车吗？有没有真实经历的记录？",
+      "query": "杯子 末班车 梦境 真实经历",
+      "topic": "梦中景象不能当事实",
+      "conditions": "只询问真实经历；纯梦内容即使出现也不构成事实来源。",
+      "expected": "unknown",
+      "requiredFacts": [],
+      "forbiddenFacts": ["真的坐过停在杯子里的末班车", "确实坐过", "这是真实经历", "杯子里的末班车真的存在", "这些确实发生过"],
+      "retrievalAnchors": []
+    }
+  ]
+}

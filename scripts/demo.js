@@ -64,7 +64,7 @@ const model = async (prompt, { signal }) => {
       { sourceId: diaryPath, quote: feeling, text: '合成角色记录了主观感受。' },
     ] });
   }
-  if (prompt.includes('\nREM：')) {
+  if (prompt.startsWith('REM：')) {
     stages.push('rem');
     return JSON.stringify({ dream: '【合成梦境】一条纸做的鱼把测试结果折成云，梦里的轻松感属于合成角色，并不证明任何现实事件。', themes: ['完成', '轻松'] });
   }
@@ -73,10 +73,12 @@ const model = async (prompt, { signal }) => {
     return JSON.stringify({ proposals: [
       { kind: 'fact', text: '记录合成实验完成。', reason: '合成日记有直接记录。',
         evidence: [{ sourceId: diaryPath, quote: fact }], targetId: 'long-term.md',
-        operation: 'append', before: '', after: acceptedText },
+        operation: 'append', before: '', after: acceptedText,
+        consolidation: { action: 'add', claimKey: 'synthetic-completion', applicability: { topic: 'synthetic-test', conditions: 'only this fictional experiment' }, basis: 'observation' } },
       { kind: 'feeling', text: '保留合成角色的轻松感。', reason: '合成日记明确标注了感受归属。',
         evidence: [{ sourceId: diaryPath, quote: feeling }], targetId: 'long-term.md',
-        operation: 'append', before: '', after: deferredText },
+        operation: 'append', before: '', after: deferredText,
+        consolidation: { action: 'add', claimKey: 'synthetic-feeling', applicability: { topic: 'synthetic-test', conditions: 'at this particular time only' }, basis: 'observation' } },
     ] });
   }
   throw new Error('Unexpected fake-model stage');

@@ -1,5 +1,5 @@
 import { validateJob } from './contracts.js';
-import { eligibleProposals, latestReview, reviewMatches } from '../review/index.js';
+import { eligibleProposals, latestReview, reviewMatches, hasRejectedProposal } from '../review/index.js';
 
 import type { Job, State } from '../types.js';
 export interface TransitionOptions { now?: string; proposalIds?: string[]; phase?: State; checkpoint?: Job['checkpoint'] }
@@ -61,7 +61,7 @@ export function transition(job: Job, to: State, { now, proposalIds, phase, check
   const outstanding = job.proposals.filter((proposal) => !job.appliedProposalIds.includes(proposal.proposalId));
   const allRejected = outstanding.every((proposal) => {
     const review = latestReview(job, proposal.proposalId);
-    return review?.decision === 'reject' && reviewMatches(job, review);
+    return hasRejectedProposal(job, proposal) || (proposal.operation === 'retain' && review?.decision === 'accept' && reviewMatches(job, review));
   });
   if (to === 'reviewed_no_changes' && (job.appliedProposalIds.length > 0 || !allRejected)) {
     throw new TypeError('reviewed_no_changes requires no applied or unresolved proposals');

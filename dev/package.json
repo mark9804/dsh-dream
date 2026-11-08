@@ -1,0 +1,9 @@
+{
+  "name": "dsh-dream-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local checked-build publication bridge for DSH Dream; not part of the distributed plugin.",
+  "type": "module",
+  "exports": { ".": "./bridge.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

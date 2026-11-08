@@ -1,8 +1,12 @@
 import { isDeepStrictEqual } from 'node:util';
 import { posix } from 'node:path';
-import { validateChangeSet, validateJob } from '../domain/contracts.js';
+import { validateChangeSet, validateJob, validateSnapshot } from '../domain/contracts.js';
+import { assertChangeBudget, DEFAULT_CHANGE_BUDGET } from '../domain/budgets.js';
+import type { ChangeBudget } from '../domain/budgets.js';
+import { candidateView } from '../dream/lineage.js';
+import { validateEpisodeDigest } from '../dream/episodes.js';
 
-import type { Files, Version, Job, DreamResult, Review, Proposal, Manifest, ChangeSet, AfterStep, ReloadSource, ManifestEntry } from '../types.js';
+import type { Files, Version, Job, DreamResult, Review, Proposal, Manifest, ChangeSet, AfterStep, ReloadSource, ManifestEntry, ReinforcementControl, OriginalSourceVerifier, Scope } from '../types.js';
 
 function failure(code: string, message: string) {
   return Object.assign(new Error(message), { code });
@@ -24,7 +28,7 @@ function parseRecord(content: string): Record<string, unknown> {
 }
 
 /** Persist plugin records and recover accepted multi-file changes through an injected filesystem. */
-export function createStore(files: Files, { root = 'state', lockKey, now = () => new Date().toISOString() }: { root?: string; lockKey?: string; now?: () => string } = {}) {
+export function createStore(files: Files, { root = 'state', lockKey, now = () => new Date().toISOString(), changeBudget = DEFAULT_CHANGE_BUDGET, verifyOriginal }: { root?: string; lockKey?: string; now?: () => string; changeBudget?: ChangeBudget; verifyOriginal?: OriginalSourceVerifier } = {}) {
   if (!files || (['read', 'write', 'mkdir', 'list', 'withLock'] as const).some((name) => typeof files[name] !== 'function')) {
     throw new TypeError('The storage adapter must provide files and a memory-root lock');
   }
@@ -54,13 +58,56 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
     return job;
   }
 
+  function preserveHistory(previous: Job | null, next: Job) {
+    const before = previous?.transactionHistory ?? [];
+    const after = next.transactionHistory ?? [];
+    if (!previous) {
+      if (after.length || next.transactionWriteReceipt) throw failure('TRANSACTION_HISTORY_CONFLICT', 'New jobs cannot invent acknowledged history or write receipts');
+      return;
+    }
+    const conflict = (message: string) => { throw failure('TRANSACTION_HISTORY_CONFLICT', message); };
+    if (!isDeepStrictEqual(previous.transactionWriteReceipt, next.transactionWriteReceipt) &&
+      (next.transactionWriteReceipt !== undefined || previous.transaction?.transactionId === next.transaction?.transactionId)) conflict('Transaction write receipts can only be recorded by storage completion');
+    for (const field of ['appliedProposalIds', 'appliedTransactionIds', 'invalidatedReviewIds'] as const) {
+      const oldIds = previous[field] ?? [], newIds = next[field] ?? [];
+      if (oldIds.some((id, index) => newIds[index] !== id)) conflict(`${field} is append-only`);
+    }
+    if (before.length > after.length || before.some((entry, index) => !isDeepStrictEqual(entry, after[index]))) conflict('Acknowledged transaction history is append-only');
+    // Freeze the interpretations referenced by history as well as its own entries.
+    // Otherwise rewriting an old review/basis could change what an unchanged ID means.
+    for (const entry of after) {
+      for (const id of entry.transaction.proposalIds) {
+        if (!isDeepStrictEqual(previous.proposals.find(item => item.proposalId === id), next.proposals.find(item => item.proposalId === id))) conflict('Historical transaction proposal is immutable');
+      }
+      for (const id of entry.transaction.reviewIds) {
+        if (!isDeepStrictEqual(previous.reviews.find(item => item.reviewId === id), next.reviews.find(item => item.reviewId === id))) conflict('Historical transaction review and basis are immutable');
+      }
+    }
+    const appended = after.slice(before.length);
+    if (!appended.length) return;
+    if (appended.length !== 1 || previous.state !== 'awaiting_reload' || previous.reload?.status !== 'ready' || previous.reload.acknowledgedAt || !previous.transaction) conflict('Transaction history can be appended only by a fresh reload acknowledgement');
+    const entry = appended[0];
+    if (!isDeepStrictEqual(previous.scope, next.scope) || !isDeepStrictEqual(previous.transaction, next.transaction) ||
+      !isDeepStrictEqual(entry.transaction, { ...previous.transaction, status: 'applied' }) ||
+      !isDeepStrictEqual(entry.reload, next.reload) ||
+      !isDeepStrictEqual({ ...entry.reload, acknowledgedAt: undefined }, { ...previous.reload, acknowledgedAt: undefined }) ||
+      !['awaiting_review', 'completed'].includes(next.state) ||
+      !isDeepStrictEqual(previous.appliedProposalIds, next.appliedProposalIds) ||
+      !isDeepStrictEqual(previous.appliedTransactionIds, next.appliedTransactionIds)) conflict('New transaction history must bind the current transaction, reload and applied ledgers');
+    const receipt = previous.transactionWriteReceipt;
+    const expectedWritten = receipt?.transactionId === entry.transaction.transactionId && receipt.sources.every(written => entry.reload.sources.some(source => isDeepStrictEqual(source, written))) ? receipt.sources : undefined;
+    if (!isDeepStrictEqual(entry.writtenSources, expectedWritten)) conflict('Transaction history written sources must come from matching storage write receipts');
+  }
+
   async function saveJob(job: Job) {
-    validateJob(job);
+    // Detach before awaiting the storage lock so a caller cannot mutate guarded history.
+    const next = structuredClone(validateJob(job));
     return locked(async () => {
-      const pathname = jobPath(job.jobId);
+      const pathname = jobPath(next.jobId);
       const stored = await load(pathname);
-      await save(pathname, job, stored?.version ?? null);
-      return job;
+      preserveHistory(stored ? validateJob(stored.value) : null, next);
+      await save(pathname, next, stored?.version ?? null);
+      return next;
     });
   }
 
@@ -70,9 +117,10 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       const stored = await load(pathname);
       if (!stored) throw failure('JOB_NOT_FOUND', 'Cannot update a missing job');
       validateJob(stored.value);
-      const next = await updater(structuredClone(validateJob(stored.value)));
+      const next = structuredClone(await updater(structuredClone(validateJob(stored.value))));
       validateJob(next);
       if (next.jobId !== jobId) throw new TypeError('Cannot change the job id');
+      preserveHistory(validateJob(stored.value), next);
       await save(pathname, next, stored.version);
       return next;
     });
@@ -81,16 +129,23 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
   function validateDreamResult(record: { schemaVersion?: unknown; jobId?: unknown; result?: unknown }, jobId: string): DreamResult {
     if (record.schemaVersion !== 1 || record.jobId !== jobId) throw new TypeError('Stored dream result identity or version is invalid');
     const result = record.result as DreamResult | undefined; // Candidate validated below; proposals are checked against the job before use.
-    if (!result || typeof result !== 'object' || Array.isArray(result) ||
-      typeof result.dream !== 'string' || !result.dream.trim() || !Array.isArray(result.proposals)) {
-      throw new TypeError('Invalid stored dream result');
-    }
+    if (!result || typeof result !== 'object' || Array.isArray(result) || !Array.isArray(result.proposals)) throw new TypeError('Invalid stored generation result');
+    if (result.mode === 'memory-v2') {
+      if (!result.digest || 'dream' in result) throw new TypeError('Memory result cannot contain a creative dream');
+    } else if (typeof result.dream !== 'string' || !result.dream.trim()) throw new TypeError('Invalid stored dream result');
     return result;
   }
 
   async function loadDreamResult(jobId: string) {
     const stored = await load(dreamResultPath(jobId));
-    return stored ? validateDreamResult(stored.value, jobId) : null;
+    if (!stored) return null;
+    const result = validateDreamResult(stored.value, jobId);
+    if (result.mode === 'memory-v2') {
+      // The job snapshot changes after review/application; use the immutable
+      // generation snapshot to validate old event evidence and identity.
+      validateEpisodeDigest(result.digest, validateSnapshot(stored.value.snapshot));
+    }
+    return result;
   }
 
   /** Save once so retries cannot pair an earlier dream with different proposals. */
@@ -99,6 +154,11 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
     const record = { schemaVersion: 1, jobId, result: structuredClone(result) };
     validateDreamResult(record, jobId);
     return locked(async () => {
+      if (result.mode === 'memory-v2') {
+        const job = await loadJob(jobId); if (!job) throw new Error('Memory result requires its job snapshot');
+        validateEpisodeDigest(result.digest, job.snapshot);
+        Object.assign(record, { snapshot: structuredClone(job.snapshot) });
+      }
       const existing = await load(pathname);
       if (existing) {
         const previous = validateDreamResult(existing.value, jobId);
@@ -150,12 +210,18 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       !Array.isArray(manifest.sources) ||
       !['prepared', 'applying', 'applied', 'cancelled'].includes(manifest.status)) throw new TypeError('Invalid transaction manifest');
     if (manifest.writeStarted !== undefined && typeof manifest.writeStarted !== 'boolean') throw new TypeError('Invalid transaction write marker');
+    if (manifest.budget !== undefined && (!Number.isSafeInteger(manifest.budget.maxChangeBytes) || manifest.budget.maxChangeBytes <= 0 || !Number.isSafeInteger(manifest.budget.maxPromotions) || manifest.budget.maxPromotions <= 0)) throw new TypeError('Invalid transaction budget');
     validateChangeSet(manifest.changeSet);
     if (manifest.changeSet.transactionId !== transactionId || manifest.jobId !== manifest.changeSet.jobId || manifest.entries.length !== manifest.changeSet.changes.length) {
       throw new TypeError('Transaction entries do not match the change set');
     }
     for (const [index, entry] of manifest.entries.entries()) {
       const change = manifest.changeSet.changes[index];
+      if (entry.writtenVersion !== undefined) {
+        // Reuse JSON version validation without pretending a returned version is a new edit.
+        validateChangeSet({ ...manifest.changeSet, changes: [{ ...change, version: entry.writtenVersion }] });
+        if (entry.writtenVersion === null) throw new TypeError('A written file receipt cannot have a missing-file version');
+      }
       if (entry.targetId !== change.targetId || typeof entry.path !== 'string' || !entry.path ||
         entry.before !== change.before || entry.after !== change.after || typeof entry.done !== 'boolean' ||
         entry.existed !== (change.version !== null)) {
@@ -178,6 +244,12 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
     job.appliedProposalIds = [...new Set([...job.appliedProposalIds, ...applied])];
     job.committingProposalIds = (job.committingProposalIds ?? []).filter((id) => !applied.has(id));
     job.appliedTransactionIds = [...(job.appliedTransactionIds ?? []), manifest.transactionId];
+    // Only actual write-return versions are receipts. Recovery that merely finds
+    // an after-image must not infer a version that the original writer never saved.
+    if (job.transaction?.transactionId === manifest.transactionId && manifest.entries.every(entry => entry.writtenVersion !== undefined)) {
+      job.transactionWriteReceipt = { transactionId: manifest.transactionId,
+        sources: manifest.entries.map(entry => ({ sourceId: entry.targetId, path: entry.path, content: entry.after, version: entry.writtenVersion! })) };
+    }
     job.state = 'applied';
     job.updatedAt = manifest.appliedAt!;
     delete job.phase;
@@ -187,6 +259,31 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
     await save(pathname, job, stored.version);
   }
 
+  async function listJobs() {
+    const entries = await files.list(path('jobs'));
+    return Promise.all(entries.filter(entry => !entry.isDirectory && entry.name.endsWith('.json'))
+      .map(async entry => (await loadJob(decodeURIComponent(entry.name.slice(0, -5))))!));
+  }
+
+  async function requireCurrentOriginals(job: Job) {
+    for (const source of job.snapshot.sources) for (const expected of source.originals ?? []) {
+      if (expected.status !== 'verified') continue;
+      if (!verifyOriginal) throw failure('ORIGINAL_SOURCE_UNVERIFIED', 'Original-source verifier unavailable before commit');
+      const actual = await verifyOriginal(expected.ref);
+      if (!isDeepStrictEqual(actual, expected)) throw failure('ORIGINAL_SOURCE_CONFLICT', 'Original-source receipt changed before commit');
+    }
+  }
+
+  async function requireCurrentCandidates(job: Job, changeSet: ChangeSet) {
+    const view = job.snapshot.candidates;
+    if (!view) return;
+    const history = (await listJobs()).filter(j => j.jobId !== job.jobId);
+    const current = candidateView(history, job.scope, view.items.length);
+    if (!isDeepStrictEqual(current, view)) throw failure('CANDIDATE_CONFLICT', 'Candidate history changed after review; request a fresh isolated review before writing');
+    // Explicitly selected candidate references are also checked by validateChangeSet.
+    void changeSet;
+  }
+
   /** Re-authorize the original input, not after-images observed during recovery. */
   async function requireCleanManifest(manifest: Manifest) {
     try {
@@ -194,7 +291,12 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       if (!job) throw new TypeError('Transaction has no stored review job');
       const reviews = manifest.changeSet.reviewIds.map(id => job.reviews.find(review => review.reviewId === id));
       if (reviews.some(review => !review?.authority)) throw new TypeError('Transaction has no clean model acceptance');
+      // Once writing starts, retain the budget admitted for this transaction;
+      // changing next-batch policy must not strand a partially applied batch.
+      assertChangeBudget(manifest.changeSet.proposalIds.map(id => job.proposals.find(p => p.proposalId === id)!), manifest.writeStarted ? manifest.budget ?? changeBudget : changeBudget);
+      if (!manifest.writeStarted && !manifest.entries.some(e => e.done)) await requireCurrentCandidates(job, manifest.changeSet);
       const original = reviews[0]!.basis;
+      await requireCurrentOriginals({ ...job, snapshot: { ...job.snapshot, sources: original.sources } });
       // The job may have refreshed a sibling after a partial write. Authorization
       // still binds the frozen original sources, while the complete source set and
       // scope must remain identifiable in that job.
@@ -219,7 +321,7 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       // be applied. Only the manifest's already-applied branch skips writes.
       validateChangeSet({ ...manifest.changeSet, status: 'prepared' }, {
         ...job, state: 'applying',
-        snapshot: { ...job.snapshot, scope: original.scope, sources: original.sources },
+        snapshot: { ...job.snapshot, scope: original.scope, sources: original.sources, candidates: original.candidates, originalCoverage: original.originalCoverage },
       });
       if (manifest.sources.length !== original.sources.length ||
         new Set(manifest.sources.map(source => source.sourceId)).size !== manifest.sources.length ||
@@ -287,7 +389,10 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
           version = await save(pathname, manifest, version);
         }
         await files.mkdir(posix.dirname(entry.path));
-        await files.write(entry.path, entry.after, manifest.changeSet.changes[index].version);
+        entry.writtenVersion = await files.write(entry.path, entry.after, manifest.changeSet.changes[index].version);
+        // Persist the returned version before the test/recovery hook can interrupt.
+        // If this save itself fails, recovery must leave continuity unproven.
+        version = await save(pathname, manifest, version);
         await afterStep?.({ phase: 'written', index, manifest: structuredClone(manifest) });
       }
       entry.done = true;
@@ -319,6 +424,9 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       const job = await loadJob(changeSet.jobId);
       if (!job) throw failure('JOB_NOT_FOUND', 'An accepted job is required for a new transaction');
       validateChangeSet(changeSet, job);
+      await requireCurrentCandidates(job, changeSet);
+      await requireCurrentOriginals(job);
+      assertChangeBudget(changeSet.proposalIds.map(id => job.proposals.find(p => p.proposalId === id)!), changeBudget);
       const checked = new Set<string>();
       const sources: ReloadSource[] = [];
       for (const reviewId of changeSet.reviewIds) {
@@ -359,7 +467,7 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
         }
       }
       const manifest: Manifest = { schemaVersion: 1, transactionId: changeSet.transactionId, jobId: changeSet.jobId,
-        status: 'prepared', writeStarted: false, changeSet: structuredClone(changeSet), entries, sources };
+        status: 'prepared', writeStarted: false, budget: { maxChangeBytes: changeBudget.maxChangeBytes, maxPromotions: changeBudget.maxPromotions }, changeSet: structuredClone(changeSet), entries, sources };
       const version = await save(pathname, manifest, null);
       await afterStep?.({ phase: 'prepared', manifest: structuredClone(manifest) });
       return applyManifest(manifest, version, afterStep);
@@ -400,10 +508,23 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
 
   return {
     loadJob, saveJob, updateJob, loadDreamResult, saveDreamResult, appendDream, appendRejected, commit, recover, cancelUnwritten,
-    async listJobs() {
-      const entries = await files.list(path('jobs'));
-      return Promise.all(entries.filter((entry) => !entry.isDirectory && entry.name.endsWith('.json'))
-        .map(async (entry) => (await loadJob(decodeURIComponent(entry.name.slice(0, -5))))!));
+    async loadGenerationSnapshot(jobId: string) { const stored = await load(dreamResultPath(jobId)); return stored?.value.snapshot ? validateSnapshot(stored.value.snapshot) : null; },
+    listJobs,
+    async setReinforcement(control: ReinforcementControl) {
+      if (!control || !control.actor || !control.scope) throw new TypeError('Invalid reinforcement control');
+      if (control.schemaVersion !== 1 || typeof control.candidateId !== 'string' || !control.candidateId.trim() || typeof control.enabled !== 'boolean' || !control.reason?.trim() || !Number.isFinite(Date.parse(control.at)) || control.actor.agentId !== control.scope.agentId || control.actor.sessionId !== control.scope.sessionId) throw new TypeError('Invalid reinforcement control');
+      return locked(async () => {
+        const pathname = path('reinforcement', `${key(control.scope.scopeId)}-${key(control.candidateId)}.json`);
+        const old = await load(pathname);
+        if (old && !isDeepStrictEqual(old.value.scope, control.scope)) throw failure('SCOPE_CONFLICT', 'Reinforcement control belongs to another scope');
+        await save(pathname, control, old?.version ?? null);
+        return control;
+      });
+    },
+    async listReinforcement(scope: Scope): Promise<ReinforcementControl[]> {
+      const entries = await files.list(path('reinforcement'));
+      const records = await Promise.all(entries.filter(e => !e.isDirectory && e.name.endsWith('.json')).map(e => load(path('reinforcement', e.name))));
+      return records.filter(r => r && isDeepStrictEqual(r.value.scope, scope)).map(r => r!.value as unknown as ReinforcementControl);
     },
     async listTransactions() {
       const entries = await files.list(path('transactions'));

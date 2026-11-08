@@ -1,0 +1,10 @@
+# One-shot isolated smoke runner; not an installed bundle or current-profile edit.
+- id: headless-runner
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- insert:
+    - id: dream-host-smoke
+      name: ./host-smoke.js

@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { constants } from 'node:fs';
+import { readFile, writeFile, mkdir, mkdtemp, lstat, readdir, copyFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createHash, randomUUID } from 'node:crypto';
+const repo=resolve(import.meta.dirname,'..'),[artifactArg,target,basicArg,commandArg]=process.argv.slice(2),artifact=resolve(artifactArg??''),basic=resolve(basicArg??''),command=resolve(commandArg??'');
+assert.ok(artifact.startsWith(join(repo,'tests/.tmp/package-'))&&target?.startsWith('session-'));
+assert.ok(basic.endsWith('/@deepseek-ai/dsh-compaction-basic/lib/index.js')&&command.endsWith('/@deepseek-ai/dsh-command-compact/lib/index.js'),'Pass exact inspected installed entry paths');
+const root=await mkdtemp(join(repo,'tests/.tmp/compaction-host-')),name='dsh-dream-compaction-host-'+randomUUID().slice(0,8),cases=['auto-skip','dream-compact'].map(id=>({id,ownerId:'dream-compact-'+id+'-'+randomUUID()}));
+const save=(p,v)=>writeFile(join(root,p),typeof v==='string'?v:JSON.stringify(v,null,2),{flag:'wx'});
+const fixture={synthetic:true,messages:['合成用户林澄：这次记忆里三句出差安排是同一个边界，请整理成一条：出差可以临时改计划，但伙伴不能替我答应额外会面；只限出差。','合成用户林澄：这只铜色保温壶是表哥送的，不是在北街旧货店买的；赠送日期和价格不知道。请只纠正这只壶的长期条目。'],longTerm:'# 合成伙伴记忆，不是用户本人\n\n## 出差安排\n\n- 林澄出差时可以接受临时改计划，但伙伴不能替他答应额外会面。\n- 关于林澄出差：临时改变行程可以接受，额外见面不要代替他答应。\n- 林澄的出差偏好是允许改计划，不能帮他多答应会面。\n\n## 铜色保温壶\n\n- 林澄的铜色保温壶是在北街旧货店买的。\n'};
+for(const dir of['bundle','bundle/lib','bundle/locale','audit','raw'])await mkdir(join(root,dir));
+for(const spec of cases){for(const dir of['','memory','memory/daily','memory/ideas','state'])await mkdir(join(root,spec.id,dir));const data={'long-term.md':fixture.longTerm,'decisions.md':'# 合成决定\n\n仅测试副本，不是用户资料。\n','journal.md':'# 合成索引\n\n2026-11-05：虚构出差边界及壶来历更正。\n','ideas/open.md':'# 合成未决\n\n无其他事项。\n','daily/2026-11-05.md':'# 2026-11-05 合成对话\n\n'+fixture.messages.join('\n\n')+'\n'};for(const[p,text]of Object.entries(data))await save(spec.id+'/memory/'+p,text);await save(spec.id+'/baseline.json',data);}
+async function copy(a,b){const info=await lstat(a);assert.equal(info.isSymbolicLink(),false);if(info.isDirectory()){await mkdir(b);for(const n of await readdir(a))await copy(join(a,n),join(b,n));}else await copyFile(a,b,constants.COPYFILE_EXCL);}
+await copy(join(artifact,'dist'),join(root,'bundle/dist'));await copyFile(join(artifact,'icon.svg'),join(root,'bundle/icon.svg'),constants.COPYFILE_EXCL);
+const driver=await readFile(join(repo,'scripts/lib/compaction-host-driver.js'),'utf8');await save('bundle/lib/compaction-host-driver.js',driver);
+// The resolved installed app.asar paths came from Config Inspect. Node's usual
+// external-bundle bare-package search does not locate shipped Host modules.
+await save('bundle/lib/native-basic.js',`export{default}from${JSON.stringify(pathToFileURL(basic).href)};\n`);await save('bundle/lib/native-command.js',`export*from${JSON.stringify(pathToFileURL(command).href)};\n`);
+await save('fixture.json',fixture);await save('bundle/index.js',`import{apply as run,inject}from'./lib/compaction-host-driver.js';export{inject};export const apply=ctx=>run(ctx,${JSON.stringify({root,target,cases})});\n`);
+for(const[lang,title]of[['en','Dream and native compaction compatibility trial'],['zh','Dream 与内置压缩隔离兼容验收']])await save('bundle/locale/'+lang+'.json',{meta:{title,description:'Owned fictional sessions only: real shipped native compaction, automatic pressure, command busy/FIFO, Dream write/read receipts. No user memory or global compression changes; uninstall after trial.'}});
+await save('bundle/package.json',{name,version:'0.1.0',private:true,type:'module',exports:{'.':'./index.js','./icon':'./icon.svg','./locale/*.json':'./locale/*.json'},files:['index.js','lib','dist','locale','icon.svg','cordis.patch.yml'],dsh:{bundle:{patch:'./cordis.patch.yml'}}});await save('bundle/cordis.patch.yml',`- insert:\n    - id: ${name}\n      name: ${name}\n`);
+const archive=join(artifact,'../dsh-dream-0.1.0.tgz');await save('manifest.json',{name,root,bundle:join(root,'bundle'),artifact,archive,artifactSha1:createHash('sha1').update(await readFile(archive)).digest('hex'),driverSha256:createHash('sha256').update(driver).digest('hex'),synthetic:true,target,cases,nativeBasicEntry:basic,nativeCommandEntry:command,isolation:'Fresh agent-tagged compaction service realm; inactive root backend and human parent untouched.',paidBudget:'At most8 isolated requests(2cases×2generate+<=2review); at most4actualsummary calls; at most32ownerattempts.',coverage:'Automatic pre-step pressure before Dream review; Dream direct native compactNow and concurrent /compact busy; queued synthetic prompt FIFO; actual reload nonceACK; manual post-Dream compression cost observed. Simulated fixed date, no scheduler timing/full user persona.'});console.log(JSON.stringify({root,bundle:join(root,'bundle'),name,cases},null,2));

@@ -1,12 +1,14 @@
 import { isDeepStrictEqual } from 'node:util';
-import { validateJob, validateProposal, validateReview } from '../domain/contracts.js';
-import { cleanReviewDigest } from './isolation.js';
+import { assertAdmission, validateJob, validateProposal, validateReview } from '../domain/contracts.js';
+import { cleanReviewDigest, reviewPolicyVersion } from './isolation.js';
 
 import type { Proposal, Snapshot, Job, Review, ReviewInput, Actor, CleanReviewAuthority } from '../types.js';
 
 function basis(snapshot: Snapshot) {
   return {
     scope: snapshot.scope,
+    ...(snapshot.candidates ? { candidates: snapshot.candidates } : {}),
+    ...(snapshot.originalCoverage ? { originalCoverage: snapshot.originalCoverage } : {}),
     // Persona and uncited context are part of the isolated model's input too.
     sources: snapshot.sources.toSorted((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0),
   };
@@ -15,6 +17,19 @@ function basis(snapshot: Snapshot) {
 /** Return the newest recorded decision, including one that is now stale. */
 export function latestReview(job: Job, proposalId: string) {
   return job.reviews.findLast((item) => item.proposalId === proposalId);
+}
+
+/** Host recomputes lineage while refreshing sources; it is not a new editing
+ * intent that can reopen an observed rejection. This predicate grants NO writes. */
+export function sameVetoProposal(left: Proposal, right: Proposal) {
+  const { lineage: _left, ...a } = left, { lineage: _right, ...b } = right;
+  return isDeepStrictEqual(a, b);
+}
+export function hasRejectedProposal(job: Job, proposal: Proposal) {
+  return job.reviews.some(review => {
+    if (review.jobId !== job.jobId || review.proposalId !== proposal.proposalId || review.decision !== 'reject' || !isDeepStrictEqual(review.basis.scope, job.scope) || !sameVetoProposal(review.proposalSnapshot, proposal)) return false;
+    try { validateReview(review); return true; } catch (error) { if (error instanceof TypeError) return false; throw error; }
+  });
 }
 
 /** Approval needs current provenance; rejecting an obsolete proposal grants no write. */
@@ -26,8 +41,9 @@ export function reviewMatches(job: Job, review: Review | undefined) {
   try {
     validateReview(review);
     if (review.decision === 'accept') {
-      if (!review.authority || review.authority.inputDigest !== cleanReviewDigest(job.snapshot, proposal)) return false;
+      if (!review.authority || review.authority.policyVersion !== reviewPolicyVersion(job.snapshot, proposal) || review.authority.inputDigest !== cleanReviewDigest(job.snapshot, proposal)) return false;
       validateProposal(proposal, job.snapshot);
+      assertAdmission(proposal, job.snapshot);
     }
   } catch (error) {
     if (error instanceof TypeError) return false;
@@ -43,7 +59,7 @@ export function eligibleProposals(job: Job) {
   validateJob(job);
   return job.proposals.filter((proposal) => {
     const review = latestReview(job, proposal.proposalId);
-    return !job.appliedProposalIds.includes(proposal.proposalId) &&
+    return proposal.operation !== 'retain' && !job.appliedProposalIds.includes(proposal.proposalId) &&
       review?.decision === 'accept' && reviewMatches(job, review);
   });
 }
@@ -61,8 +77,9 @@ export function recordReview(job: Job, input: ReviewInput, actor: Actor,
   const proposal = job.proposals.find((item) => item.proposalId === input.proposalId);
   if (!proposal) throw new TypeError('unknown proposal');
   if (input.decision === 'accept') {
-    if (!authority) throw Object.assign(new TypeError('Acceptance requires matching clean model authority'), { code: 'CLEAN_REVIEW_REQUIRED' });
+    if (!authority || authority.policyVersion !== reviewPolicyVersion(job.snapshot, proposal)) throw Object.assign(new TypeError('Acceptance requires matching clean model authority'), { code: 'CLEAN_REVIEW_REQUIRED' });
     validateProposal(proposal, job.snapshot);
+    assertAdmission(proposal, job.snapshot);
   }
   const review: Review = {
     schemaVersion: 1, reviewId, proposalId: proposal.proposalId, jobId: job.jobId,

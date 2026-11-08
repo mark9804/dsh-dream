@@ -1,0 +1,13 @@
+import { mkdir, mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+const repo = resolve(import.meta.dirname, '..');
+await mkdir(join(repo, 'tests/.tmp'), { recursive: true });
+const root = await mkdtemp(join(repo, 'tests/.tmp/settings-host-'));
+const name = `dsh-dream-settings-smoke-${randomUUID().slice(0, 8)}`, bundle = join(root, 'bundle'); await mkdir(bundle);
+const driver = await readFile(join(repo, 'scripts/lib/settings-smoke-driver.js'), 'utf8');
+await writeFile(join(bundle, 'index.js'), driver + `\nexport function apply(ctx){return run(ctx,${JSON.stringify(root)});}\n`);
+await writeFile(join(bundle, 'package.json'), JSON.stringify({ name, version: '0.1.0', private: true, type: 'module', exports: { '.': './index.js' }, dsh: { bundle: { patch: './cordis.patch.yml' } } }, null, 2));
+await writeFile(join(bundle, 'cordis.patch.yml'), `- insert:\n    - id: ${name}\n      name: ${name}\n`);
+await writeFile(join(root, 'manifest.json'), JSON.stringify({ root, bundle, name, purpose: 'One-off bounded real Host settings endpoint/configEditor check; business remains off; restore exact raw owner config; no model or memory reads', metadataException: 'Disposable internal test fixture, not user-facing final bundle', paidModelCalls: 0 }, null, 2));
+console.log(JSON.stringify({ root, bundle, name }, null, 2));
