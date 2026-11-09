@@ -1,6 +1,11 @@
 import type { DreamConfig } from '../types.js';
 import type { SessionDirectoryItem } from './sessions.js';
 import type { GenerationDiagnostics } from '../domain/generation-diagnostics.js';
+export interface ModelCatalog {
+  groups: { id: string; name: string; models: { id: string; name: string; reasoning?: { efforts: { id: string; name: string; description?: string }[]; defaultEffort?: string } }[] }[];
+  failures: { id: string; name: string; message: string }[];
+  current?: { provider: string; model: string; reasoningEffort?: string };
+}
 export interface SettingsIssue { field?: string; message: string }
 export interface RuntimeStatus {
   state: 'disabled' | 'unconfigured' | 'waiting_session' | 'ready' | 'running' | 'unavailable';

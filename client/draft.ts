@@ -33,7 +33,25 @@ export const numericFields = {
   maxOriginalBytes: { min: 1, max: Number.MAX_SAFE_INTEGER, unit: 'bytes' },
 } as const;
 export type NumericField = keyof typeof numericFields;
-export type ConfigField = NumericField | 'sessionId' | 'memoryRoot' | 'stateRoot' | 'personaPath' | 'start' | 'end' | 'timeZone'
+export const modelFields = ['memoryModel', 'dreamModel', 'reviewModel'] as const;
+export type ModelField = typeof modelFields[number];
+/** Validate the saved shape, not a transient model directory. Missing capability
+ * metadata must never rewrite an existing draft or turn an unknown into a default. */
+export function modelChoiceError(value: unknown): LocaleKey | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return 'fieldModelChoice';
+  for (const key of Reflect.ownKeys(value)) {
+    if (key !== 'provider' && key !== 'model' && key !== 'reasoningEffort') return 'fieldModelChoice';
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !('value' in descriptor)) return 'fieldModelChoice';
+    const text: unknown = descriptor.value;
+    if (text !== undefined && (typeof text !== 'string' || !text.length || text.length > (key === 'reasoningEffort' ? 128 : 512) || /[\s\u0000-\u001f\u007f]/u.test(text))) return 'fieldModelChoice';
+  }
+  const provider = Object.getOwnPropertyDescriptor(value, 'provider')?.value;
+  const model = Object.getOwnPropertyDescriptor(value, 'model')?.value;
+  return (provider === undefined) !== (model === undefined) ? 'fieldModelChoice' : undefined;
+}
+export type ConfigField = NumericField | ModelField | 'sessionId' | 'memoryRoot' | 'stateRoot' | 'personaPath' | 'start' | 'end' | 'timeZone'
   | 'compactionMode' | 'singleRun' | 'dreamMode' | 'dreamMood' | 'sourceSessionIds' | 'originalSources' | 'dreamContextRefs';
 export type Draft = Record<string, unknown>;
 export type FieldErrors = Partial<Record<ConfigField, LocaleKey>>;
@@ -50,8 +68,16 @@ export function draftOf(config: Record<string, unknown>): Draft {
   return draft;
 }
 export function serializeDraft(draft: Draft, { enabled = true }: { enabled?: boolean } = {}): { config: Record<string, unknown>; errors: FieldErrors } {
-  const config = structuredClone(draft);
   const errors: FieldErrors = {};
+  for (const field of modelFields) {
+    const error = modelChoiceError(draft[field]);
+    if (error) errors[field] = error;
+  }
+  // Malformed model values can contain accessors or symbols that cannot be
+  // cloned. Preserve the draft and reject them without executing those values.
+  const safeDraft = { ...draft };
+  for (const field of modelFields) if (errors[field]) delete safeDraft[field];
+  const config = structuredClone(safeDraft);
   for (const field of Object.keys(numericFields) as NumericField[]) {
     const rule = numericFields[field];
     if ('duration' in rule) {

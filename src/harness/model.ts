@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { HostContext, Agent } from './types.js';
-import type { Model, ModelOptions } from '../types.js';
+import type { DreamModelChoice, Model, ModelOptions } from '../types.js';
+import { validateDreamModelChoice } from '../config.js';
 import { errorFields } from '../types.js';
 import { diagnosticCode, diagnosticUsage, validateModelProgress } from '../domain/generation-diagnostics.js';
 import type { ModelProgress } from '../domain/generation-diagnostics.js';
-import { captureModelCall, copyCallConfig } from './model-selection.js';
+import { captureModelChoice, copyCallConfig } from './model-selection.js';
 import type { SelectedCallConfig } from './model-selection.js';
 
 interface OutputBlock { kind: 'text' | 'reasoning'; text: string; closed: boolean; hasDelta: boolean; byteCount?: number }
@@ -15,15 +16,16 @@ function record(value: unknown): value is Record<string, unknown> {
 
 /** One fresh, history-free call using the target's model route and controls.
  * capture() fixes a background worker admission across all its stage calls. */
-export function createHostModel(ctx: HostContext, agent: Agent, { maxOutputBytes = 65536 } = {}): Model & { capture(): Model } {
+export function createHostModel(ctx: HostContext, agent: Agent, { maxOutputBytes = 65536, modelChoice }: { maxOutputBytes?: number; modelChoice?: DreamModelChoice } = {}): Model & { capture(): Model } {
   if (typeof ctx.llm?.prepareCall !== 'function') throw new Error('Harness model service unavailable');
   if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0) throw new RangeError('Invalid model maxOutputBytes');
+  const choice = validateDreamModelChoice(modelChoice);
   const invoke = async (prompt: string, { signal, onProgress }: ModelOptions = {}, captured?: SelectedCallConfig): Promise<string> => {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new TypeError('Model prompt must be nonempty text');
     signal?.throwIfAborted();
     // Copy only concrete LlmCallControls, not native session/system/tool state.
     // The byte budget is an additional guard, not a replacement token budget.
-    const config = captured ? copyCallConfig(captured) : captureModelCall(agent);
+    const config = captured ? copyCallConfig(captured) : captureModelChoice(agent, choice);
     const stamp = () => new Date().toISOString();
     const progress: ModelProgress = { callId: randomUUID(), state: 'preparing', provider: config.provider, model: config.model,
       ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}), inputBytes: Buffer.byteLength(prompt), outputBytes: 0, reasoningBytes: 0, chunkCount: 0 };
@@ -135,7 +137,7 @@ export function createHostModel(ctx: HostContext, agent: Agent, { maxOutputBytes
   };
   return Object.assign((prompt: string, options?: ModelOptions) => invoke(prompt, options), {
     capture(): Model {
-      const config = captureModelCall(agent);
+      const config = captureModelChoice(agent, choice);
       return (prompt, options) => invoke(prompt, options, config);
     },
   });

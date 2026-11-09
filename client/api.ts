@@ -1,4 +1,10 @@
 import type { GenerationDiagnostics } from '../src/domain/generation-diagnostics.js';
+export interface DreamModelChoice { provider?: string; model?: string; reasoningEffort?: string }
+export interface ModelCatalog {
+  groups: { id: string; name: string; models: { id: string; name: string; reasoning?: { efforts: { id: string; name: string; description?: string }[]; defaultEffort?: string } }[] }[];
+  failures: { id: string; name: string; message: string }[];
+  current?: { provider: string; model: string; reasoningEffort?: string };
+}
 export interface DreamSettingsStatus {
   state: 'disabled' | 'unconfigured' | 'waiting_session' | 'ready' | 'running' | 'unavailable';
   reason?: string;
@@ -29,6 +35,7 @@ export interface DreamSettingsApi {
   save(input: { revision: string; config: Record<string, unknown>; enabled: boolean; confirmEnable?: true; confirmScope?: true }): Promise<DreamSettingsSnapshot>;
   preflight(input: { config: Record<string, unknown> }, signal?: AbortSignal): Promise<Readiness>;
   sessions(input: { query?: string }, signal?: AbortSignal): Promise<{ items: SessionOption[]; truncated: boolean }>;
+  models(input: { sessionId?: string }, signal?: AbortSignal): Promise<ModelCatalog>;
   pickDirectory(signal?: AbortSignal): Promise<string | null>;
   pickFile(signal?: AbortSignal): Promise<string | null>;
   messages(input: { sessionId: string; query?: string; cursor?: string }, signal?: AbortSignal): Promise<{ items: MessageOption[]; cursor?: string; truncated: boolean }>;
@@ -57,5 +64,5 @@ export function createDreamSettingsApi(baseURI: string = document.baseURI): Drea
     return envelope.value as T;
   }
   return { read: signal => call('read', {}, signal), save: input => call('save', input), preflight: (input, signal) => call('preflight', input, signal),
-    sessions: (input, signal) => call('sessions', input, signal), pickDirectory: signal => call('pick-directory', {}, signal), pickFile: signal => call('pick-file', {}, signal), messages: (input, signal) => call('messages', input, signal), status: signal => call('status', {}, signal) };
+    models: (input, signal) => call('models', input, signal), sessions: (input, signal) => call('sessions', input, signal), pickDirectory: signal => call('pick-directory', {}, signal), pickFile: signal => call('pick-file', {}, signal), messages: (input, signal) => call('messages', input, signal), status: signal => call('status', {}, signal) };
 }

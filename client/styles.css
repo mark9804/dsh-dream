@@ -81,6 +81,18 @@
 .dream-settings .dream-settings-switch:dir(rtl)[data-checked] > .dream-settings-switch-thumb { transform: translateX(-12px); }
 .dream-settings-route { display: flex; flex-wrap: wrap; gap: 5px 12px; border-top: 1px solid var(--dream-border); margin-top: 15px; padding-top: 12px; font-size: 12px; }
 .dream-settings-route > span:first-child { color: var(--dream-muted); }
+.dream-settings-model-catalog { padding: 12px 14px; border: 1px solid var(--dream-border); border-radius: 8px; margin-bottom: 12px; }
+.dream-settings-model-catalog .dream-settings-description { margin-top: 0; }
+.dream-settings-model-cards { display: grid; gap: 12px; }
+.dream-settings-model-card { min-width: 0; border: 1px solid var(--dream-border); border-radius: 9px; background: var(--dream-card); }
+.dream-settings-model-card > .dream-settings-fieldset { padding: 16px; border: 0; }
+.dream-settings-model-card .dream-settings-choice-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dream-settings-model-card .dream-settings-choice { min-width: 0; background: var(--dream-bg); }
+.dream-settings-model-warning { color: var(--dream-muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; margin: 8px 0 0; }
+.dream-settings-model-warning p { margin: 0; }
+.dream-settings-model-warning ul { margin: 6px 0 0; padding-inline-start: 20px; }
+.dream-settings-model-reset { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.dream-settings-model-reset > .dream-settings-description { margin: 0; }
 .dream-settings-choice-group { display: flex; flex-direction: column; gap: 8px; }
 .dream-settings-choice { display: flex; gap: 11px; border: 1px solid var(--dream-border); padding: 12px; border-radius: 8px; cursor: pointer; }
 .dream-settings-choice[data-selected] { border-color: var(--dream-brand); background: color-mix(in srgb, var(--dream-brand) 5%, var(--dream-bg)); }
@@ -150,6 +162,8 @@
 @media (max-width: 600px) {
   .dream-settings { padding: 16px 16px 0; }
   .dream-settings-fields { grid-template-columns: 1fr; gap: 16px; }
+  .dream-settings-model-card .dream-settings-choice-group { grid-template-columns: 1fr; }
+  .dream-settings-model-catalog .dream-settings-row-heading { align-items: flex-start; }
   .dream-settings-footer-actions { width: 100%; }
   .dream-settings-footer-actions > .dream-settings-button--primary { margin-left: auto; }
   .dream-settings-input-group { flex-wrap: wrap; }

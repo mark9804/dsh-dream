@@ -1,4 +1,6 @@
 import type { Agent, CallConfig, HostContext } from './types.js';
+import type { DreamModelChoice } from '../types.js';
+import { validateDreamModelChoice } from '../config.js';
 
 export type SelectedCallConfig = CallConfig & { provider: string; model: string };
 type Selection = Pick<SelectedCallConfig, 'provider' | 'model' | 'reasoningEffort'>;
@@ -64,6 +66,17 @@ export function captureModelCall(agent: Agent, stepSelection?: CallConfig): Sele
     temperature: sameHeader?.config.temperature !== undefined ? sameHeader.config.temperature : sameOptions?.temperature,
     stop: sameHeader?.config.stop !== undefined ? sameHeader.config.stop : sameOptions?.stop,
   });
+}
+
+/** Choose a detached branch admission, never carrying a prepared call between
+ * stages. Explicit routes are independent even if equal to the target route:
+ * their missing effort/cap uses adapter defaults, not parent effective controls. */
+export function captureModelChoice(agent: Agent, modelChoice?: DreamModelChoice, stepSelection?: CallConfig): SelectedCallConfig {
+  const choice = validateDreamModelChoice(modelChoice);
+  if (choice?.provider !== undefined) return copyCallConfig(choice);
+  const config = captureModelCall(agent, stepSelection);
+  if (choice?.reasoningEffort !== undefined) config.reasoningEffort = choice.reasoningEffort;
+  return config;
 }
 
 export interface ModelSelectionTracker { current(): CallConfig | undefined; dispose(): void }

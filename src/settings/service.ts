@@ -12,6 +12,7 @@ import type { PreflightResult, RuntimeStatus, SettingsSnapshot } from './contrac
 import type { DreamConfig } from '../types.js';
 import type { createEngine } from '../engine.js';
 import { createSettingsSessionDirectory } from './sessions.js';
+import { buildDreamModelCatalog, validateModelChoices, modelChoiceFields } from './models.js';
 
 type Entry = { id?: string; options?: { id?: string; name?: string; config?: unknown }; fiber?: unknown };
 interface Editor { entries(): Entry[]; configuration(): { entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }[]; edit(entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>): Promise<void> }
@@ -54,6 +55,10 @@ export function createSettingsService(ctx: SettingsContext, configurationEntryId
     let selection;
     try { selection = agent.model ? agent.model.current() : agent.session.requestHeader?.()?.config ?? agent.options; if (!selection?.provider || !selection.model) throw Error('No configured model route'); checks.push({ id: 'model', state: 'ready', message: `${selection.provider}/${selection.model}` }); }
     catch (error) { checks.push({ id: 'model', state: 'unavailable', message: error instanceof Error ? error.message : String(error) }); }
+    try {
+      const issues = await validateModelChoices(runtime, config, agent);
+      checks.push(...issues.map(issue => ({ id: issue.field, state: 'invalid' as const, message: issue.message })));
+    } catch { checks.push({ id: 'models', state: 'unavailable', message: 'Unable to validate explicit Dream model choices; refresh the model directory' }); }
     checks.push(typeof runtime.compaction?.compactNow === 'function' ? { id: 'compaction', state: 'ready', message: 'Target composition provides native compaction' } : { id: 'compaction', state: 'unavailable', message: 'Target composition has no compaction backend' });
     const executor = nativeExecutor(runtime, agent);
     checks.push(executor === 'native' ? { id: 'executor', state: 'ready', message: 'Native tool executor is available' } : { id: 'executor', state: 'unavailable', message: executor === 'ptc' ? 'This settings-managed first release requires a native executor; PTC nonce receipt fallback is not fully verified' : 'Cannot determine the target tool executor' });
@@ -116,6 +121,13 @@ export function createSettingsService(ctx: SettingsContext, configurationEntryId
     if (candidate.enabled && (!settings.enabled || scopeChanged) && args.confirmEnable !== true) throw new SettingsFailure('CONFIRM_ENABLE', 'Enabling or retargeting Dream requires explicit confirmation');
     if (scopeChanged && settings.configuration.sessionId && args.confirmScope !== true) throw new SettingsFailure('CONFIRM_SCOPE', 'Changing target or source permissions requires explicit confirmation');
     if (candidate.enabled) { const result = await preflight({ config: candidate.configuration }); if (!result.canEnable) throw new SettingsFailure('PREFLIGHT_FAILED', 'Cannot enable Dream until all readiness checks pass', result); }
+    const changedModelConfig = Object.fromEntries(modelChoiceFields.filter(field => !isDeepStrictEqual(settings.configuration[field], candidate.configuration[field]) || settings.configuration.sessionId !== candidate.configuration.sessionId).map(field => [field, candidate.configuration[field]])) as Partial<DreamConfig>;
+    if (!candidate.enabled && Object.values(changedModelConfig).some(choice => choice && Object.keys(choice).length > 0)) {
+      const agent = candidate.configuration.sessionId ? ctx.agents.get(candidate.configuration.sessionId) : undefined;
+      const modelContext = agent ? createRuntimeContext(ownerContext ?? ctx, agent) : ownerContext ?? ctx;
+      const modelIssues = await validateModelChoices(modelContext, changedModelConfig, agent);
+      if (modelIssues.length) throw new SettingsFailure('INVALID_CONFIGURATION', 'Dream model or reasoning selection is unavailable', modelIssues);
+    }
     const m = metadata(); if (!m.editor || !m.entry || !active) throw new SettingsFailure('UNAVAILABLE', 'Settings configuration owner is unavailable');
     await m.editor.edit(m.entry, (current, inherited) => {
       if (hash({ raw: current, inherited, active }) !== args.revision) throw new SettingsFailure('SETTINGS_CONFLICT', 'Settings changed; refresh the current values without discarding your draft');
@@ -170,6 +182,14 @@ export function createSettingsService(ctx: SettingsContext, configurationEntryId
     } finally { observation[Symbol.dispose](); }
   }
   return {
+    async models(input: unknown, signal?: AbortSignal) {
+      const args = request(input, ['sessionId']); signal?.throwIfAborted();
+      if (args.sessionId !== undefined) text(args.sessionId, 'sessionId', 512);
+      const sessionId = typeof args.sessionId === 'string' ? args.sessionId : settings.configuration.sessionId;
+      const agent = sessionId ? ctx.agents.get(sessionId) : undefined;
+      const runtime = agent ? createRuntimeContext(ownerContext ?? ctx, agent) : ownerContext ?? ctx;
+      return buildDreamModelCatalog(runtime, agent, signal);
+    },
     read, save, preflight, status, sessions, messages, dispose: sessionDirectory.dispose, invalidateSessions: sessionDirectory.invalidate,
     mount(context: HostContext, config: SettingsConfiguration) {
       const generation = ++mountGeneration; settings = structuredClone(config); ownerContext = context; active = true; runError = undefined;

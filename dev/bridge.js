@@ -1,12 +1,14 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, realpath } from 'node:fs/promises';
 import { join, relative, isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { publishGeneration, atomicJson } from '../scripts/lib/publish-generation.js';
+import { digest } from './lib/build-inputs.js';
+import { atomicJson } from './lib/publish-generation.js';
+import { publishDevelopment } from './lib/dev-publication.js';
 export const inject = ['hmr', 'clientModules'];
 /** Optional dev-only owner. Watches a single validated-build marker, not memory,
  * test artifacts or mutable output directories. No HTTP mutation/model tools. */
 export async function apply(ctx) {
-  const project = fileURLToPath(new URL('..', import.meta.url)), directory = join(project, '.dream-dev');
+  const { project: declaredProject, controlHashes } = JSON.parse(await readFile(new URL('./project.json', import.meta.url), 'utf8'));
+  const project = await realpath(declaredProject), directory = join(project, '.dream-dev');
   await mkdir(directory, { recursive: true });
   let closed = false, completed;
   const filename = join(directory, 'pending.json');
@@ -21,7 +23,8 @@ export async function apply(ctx) {
       if (!part || part === '..' || part.startsWith('../') || isAbsolute(part)) throw new Error('Build manifest must stay inside project staging');
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
       if (manifest.project !== project || manifest.revision !== request.revision || manifest.regressions !== 'passed') throw new Error('Development publication requires a fully checked generation');
-      const published = await publishGeneration(project, manifest);
+      for (const [path, expected] of Object.entries(controlHashes)) if (digest(await readFile(join(project, path))) !== expected) throw new Error('Development control files changed; rebuild/reinstall the frozen bridge before publishing');
+      const published = await publishDevelopment(project, manifest);
       const result = await ctx.hmr.reconcileProfile(['dsh-dream-settings', 'dsh-dream-configuration']);
       if (result.restartReason || result.pending.length) throw new Error('Harness reports that this generation requires a restart');
       completed = request.revision;
@@ -31,6 +34,8 @@ export async function apply(ctx) {
       ctx.logger.error(error);
     }
   };
+  // Bridge/control modules are frozen into a separate local bundle on setup.
+  // Its watcher cannot reload itself while replacing Dream business owners.
   const unwatch = await ctx.hmr.watchConfig(filename, process);
   ctx.effect(() => {
     let disposed = false;

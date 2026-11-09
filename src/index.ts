@@ -79,7 +79,8 @@ export function apply(ctx: HostContext, input: unknown, observer?: RuntimeObserv
       const modelSelection = createModelSelectionTracker(serviceContext, agent);
       try {
       const host = createHostControl(serviceContext, agent, { completion });
-      const model = createHostModel(serviceContext, agent, config);
+      const memoryModel = createHostModel(serviceContext, agent, { ...config, modelChoice: config.memoryModel });
+      const dreamModel = createHostModel(serviceContext, agent, { ...config, modelChoice: config.dreamModel });
       const originalVerifier = createOriginalSourceVerifier(serviceContext, config);
       const verifyOriginal: typeof originalVerifier = (ref, options) => originalVerifier(ref, { signal: options?.signal ? AbortSignal.any([abort.signal, options.signal]) : abort.signal });
       const store = createStore(files, { root: config.stateRoot, lockKey: config.memoryRoot, changeBudget: config, verifyOriginal });
@@ -91,12 +92,12 @@ export function apply(ctx: HostContext, input: unknown, observer?: RuntimeObserv
       const narrativeDiary = createStore(narrativeFiles, { root: config.stateRoot, lockKey: config.memoryRoot });
       const narratives = createDreamTasks({ store: narrativeStore, config, signal: abort.signal,
         context: createDreamContextReader(serviceContext, config),
-        writer: createFreeDreamWriter(model, { timeoutMs: config.dreamTimeoutMs, maxOutputBytes: config.maxOutputBytes }),
+        writer: createFreeDreamWriter(dreamModel, { timeoutMs: config.dreamTimeoutMs, maxOutputBytes: config.maxOutputBytes }),
         publish: async task => narrativeDiary.appendDream({ jobId: task.jobId, date: task.date,
           text: `${task.sensitive ? '<!-- sensitive -->\n' : ''}${task.output!.dream}${task.output!.afterFeeling ? `\n\n> 梦后感受（梦境衍生的暂时感受，不是事实或人格）：\n\n${task.output!.afterFeeling}` : ''}` }),
         onError: error => ctx.logger?.error(error) });
       const engine = createEngine({ config, scope, files, store, host, verifyOriginal, narratives, signal: abort.signal,
-        generate: createWorkerGenerator(model, config, 'memory-v2'), cleanReview: createCleanReviewer(serviceContext, agent, { ...config, modelSelection: modelSelection.current }), generationLock: task => files.withGenerationLock(task) });
+        generate: createWorkerGenerator(memoryModel, config, 'memory-v2'), cleanReview: createCleanReviewer(serviceContext, agent, { ...config, modelSelection: modelSelection.current, modelChoice: config.reviewModel }), generationLock: task => files.withGenerationLock(task) });
       const controller = createController({ config, engine, host, signal: abort.signal });
       const removeTools = registerTools(agent, {
         status: engine.status,

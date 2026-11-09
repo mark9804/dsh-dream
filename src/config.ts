@@ -1,12 +1,36 @@
 import { isAbsolute, resolve } from 'node:path';
 
 /** Validate explicit installation settings; no profile or model credentials are read. */
-import type { DreamConfig } from './types.js';
+import type { DreamConfig, DreamModelChoice } from './types.js';
 import { errorFields } from './types.js';
 
 const MAX_TIMEOUT_MS = 2147483647;
 export const CONFIG_FIELDS: readonly string[] = ['sessionId', 'memoryRoot', 'stateRoot', 'personaPath', 'start', 'end', 'timeZone',
-  'maxSourceBytes', 'maxInputBytes', 'maxOutputBytes', 'maxProposals', 'maxChangeBytes', 'maxPromotions', 'maxCandidates', 'sourceSessionIds', 'originalSources', 'maxOriginalBytes', 'reinforcementBoost', 'recallHistoryDays', 'maxRecallFiles', 'maxRecallBytes', 'maxEpisodes', 'dreamMode', 'dreamTimeoutMs', 'maxDreamContextBytes', 'dreamContextRefs', 'dreamMood', 'timeoutMs', 'compactionMode', 'singleRun'];
+  'memoryModel', 'dreamModel', 'reviewModel', 'maxSourceBytes', 'maxInputBytes', 'maxOutputBytes', 'maxProposals', 'maxChangeBytes', 'maxPromotions', 'maxCandidates', 'sourceSessionIds', 'originalSources', 'maxOriginalBytes', 'reinforcementBoost', 'recallHistoryDays', 'maxRecallFiles', 'maxRecallBytes', 'maxEpisodes', 'dreamMode', 'dreamTimeoutMs', 'maxDreamContextBytes', 'dreamContextRefs', 'dreamMood', 'timeoutMs', 'compactionMode', 'singleRun'];
+/** Structural validation only: exact route/effort capabilities are resolved by
+ * the Host at call time, not assumed from a previously displayed model catalog. */
+export function validateDreamModelChoice(value: unknown, field = 'modelChoice'): DreamModelChoice | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new TypeError(`${field} must be a plain model choice object`);
+  const input = value as Record<string, unknown>;
+  const choice: DreamModelChoice = {};
+  for (const key of Reflect.ownKeys(input)) {
+    if (key !== 'provider' && key !== 'model' && key !== 'reasoningEffort') throw new TypeError(`Unknown ${field} field: ${String(key)}`);
+    const descriptor = Object.getOwnPropertyDescriptor(input, key);
+    if (!descriptor || !('value' in descriptor)) throw new TypeError(`${field}.${key} must be a stored string`);
+    const text: unknown = descriptor.value;
+    const limit = key === 'reasoningEffort' ? 128 : 512;
+    if (text === undefined) continue;
+    if (typeof text !== 'string' || !text.length || text.length > limit || /[\s\u0000-\u001f\u007f]/u.test(text)) {
+      throw new TypeError(`${field}.${key} must be a nonempty identifier of at most ${limit} characters without whitespace`);
+    }
+    choice[key] = text;
+  }
+  if ((choice.provider === undefined) !== (choice.model === undefined)) throw new TypeError(`${field} provider and model must be supplied together`);
+  return choice;
+}
+
 /** Detached public defaults. Required identity/paths remain unset until the user chooses them. */
 export function configurationDefaults(): Omit<DreamConfig, 'sessionId' | 'memoryRoot' | 'stateRoot'> {
   return { start: '05:00', end: '07:00', timeZone: 'local',
@@ -21,6 +45,9 @@ export function validateConfig(value: unknown): DreamConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Configuration must be an object');
   for (const key of Object.keys(value)) if (!CONFIG_FIELDS.includes(key)) throw new TypeError(`Unknown configuration field: ${key}`);
   const config = { ...configurationDefaults(), ...value } as unknown as DreamConfig; // Untrusted candidate view: every field is checked below before use.
+  for (const key of ['memoryModel', 'dreamModel', 'reviewModel'] as const) {
+    if (config[key] !== undefined) config[key] = validateDreamModelChoice(config[key], key);
+  }
   for (const key of ['sessionId', 'memoryRoot', 'stateRoot'] as const) {
     if (typeof config[key] !== 'string' || !config[key].trim()) throw new TypeError(`${key} is required`);
   }

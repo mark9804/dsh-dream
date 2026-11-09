@@ -175,6 +175,36 @@ test('saving disabled draft uses exact editor callback and never invokes model o
   await f.dispose();
 });
 
+test('explicit branch model saves validate catalog before editor while follow retains inert behavior', async () => {
+  const f = fixture();
+  f.ctx.llm.listProviders = () => [{ id: 'catalog', name: 'Catalog' }];
+  f.ctx.llm.listModels = async () => [{ provider: 'catalog', id: 'chosen', name: 'Chosen' }];
+  f.ctx.llm.resolveModelInfo = async () => ({ provider: 'catalog', id: 'chosen', name: 'Chosen', reasoning: { efforts: [{ id: 'supported', name: 'Supported' }] } });
+  const before = await f.service.read();
+  await assert.rejects(f.service.save({ revision: before.revision, config: complete({ memoryModel: { provider: 'catalog', model: 'chosen', reasoningEffort: 'not-supported' } }), enabled: false }), code('INVALID_CONFIGURATION'));
+  assert.equal(f.edits.length, 0);
+  const config = complete({ memoryModel: { provider: 'catalog', model: 'chosen', reasoningEffort: 'supported' }, reviewModel: { provider: 'catalog', model: 'chosen' } });
+  const after = await f.service.save({ revision: before.revision, config, enabled: false });
+  assert.deepEqual(after.config.memoryModel, config.memoryModel); assert.equal(f.edits.length, 1);
+  const previous = after.revision;
+  f.ctx.llm.listProviders = () => { throw Error('directory temporarily offline'); };
+  const disabledAgain = await f.service.save({ revision: previous, config: { ...config, start: '04:30' }, enabled: false });
+  assert.deepEqual(disabledAgain.config.memoryModel, config.memoryModel, 'unchanged stored choice remains removable/editable during provider outage');
+  const removed = { ...disabledAgain.config }; delete removed.memoryModel; delete removed.reviewModel;
+  await f.service.save({ revision: disabledAgain.revision, config: removed, enabled: false, confirmScope: true });
+  assert.deepEqual(f.forbidden, []); await f.dispose();
+});
+
+test('disabled retarget rechecks unchanged custom models in the new target service realm', async () => {
+  const initial = { enabled: false, configuration: complete({ memoryModel: { provider: 'old-only', model: 'chosen' } }) }, f = fixture({ initial });
+  f.ctx.llm.listProviders = () => [];
+  f.ctx.llm.listModels = async () => [];
+  f.ctx.llm.resolveModelInfo = async () => { throw Error('No such model'); };
+  const view = await f.service.read();
+  await assert.rejects(f.service.save({ revision: view.revision, config: { ...view.config, sessionId: 'new-target' }, enabled: false, confirmScope: true }), code('INVALID_CONFIGURATION'));
+  assert.equal(f.edits.length, 0); assert.deepEqual(f.forbidden, []); await f.dispose();
+});
+
 test('editor callback rechecks latest current and inherited revision instead of trusting an earlier read', async () => {
   for (const mutate of [
     chosen => { chosen.options.config = { enabled: false, configuration: { start: '02:00' } }; },

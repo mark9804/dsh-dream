@@ -11,6 +11,7 @@ export async function command(root, args, { signal, env = process.env } = {}) {
   await new Promise((done, fail) => {
     const child = spawn(process.execPath, args, { cwd: root, env, stdio: 'inherit' });
     const abort = () => child.kill('SIGTERM'); signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     child.once('error', error => { signal?.removeEventListener('abort', abort); fail(error); });
     child.once('exit', (code, stopped) => { signal?.removeEventListener('abort', abort); if (signal?.aborted) fail(signal.reason); else if (code === 0) done(); else fail(new Error(`Build command failed (${code ?? stopped}): ${args.join(' ')}`)); });
   });
@@ -26,7 +27,12 @@ export async function createStage(root = project) {
   assert.equal((await inputFingerprint(root)).hash, before.hash, 'Source changed while snapshotting; retry with latest inputs');
   return { root, staged, generation, inputHash: before.hash };
 }
-export async function runCheckedBuild({ root = project, publish = true, tests = true, signal, afterChecks } = {}) {
+export async function runCheckedBuild(options = {}) {
+  const { acquireBuildLock } = await import('./lib/build-lock.js');
+  const release = await acquireBuildLock(options.root ?? project);
+  try { return await checkedBuild(options); } finally { await release(); }
+}
+async function checkedBuild({ root = project, publish = true, tests = true, signal, afterChecks, development = false } = {}) {
   if (process.env.DSH_DREAM_STAGED_TEST === '1') throw new Error('A staged regression cannot recursively start another checked build');
   const stage = await createStage(root); signal?.throwIfAborted();
   const { staged, generation } = stage;
@@ -54,6 +60,9 @@ export async function runCheckedBuild({ root = project, publish = true, tests = 
     try { const data = JSON.parse(await readFile(attached, 'utf8')); if (Number.isSafeInteger(data.pid) && data.pid > 0 && data.active === true && data.project === stage.root) { process.kill(data.pid, 0); active = true; } } catch (error) { if (!['ENOENT', 'ESRCH'].includes(error.code) && !(error instanceof SyntaxError)) throw error; }
     if (active) {
       assert.ok(tests, 'Linked development publication requires the complete regression gate; use npm run build:checked');
+      // The editable project is not the installed runtime. Keep release artifacts
+      // current as well, without exposing them to running Host/Worker instances.
+      await publishGeneration(stage.root, manifest);
       console.log('[dream:build] Handing a validated generation to the active Harness HMR queue');
       await atomicJson(join(stage.root, '.dream-dev/pending.json'), { manifest: join(generation, 'manifest.json'), revision });
       await awaitReceipt(stage.root, revision, signal);
@@ -61,10 +70,17 @@ export async function runCheckedBuild({ root = project, publish = true, tests = 
       // Initial/offline build. A linked running profile must have the dev bridge active.
       try {
         const link = process.env.DSH_PROFILE_DIR && join(process.env.DSH_PROFILE_DIR, 'node_modules/dsh-dream');
-        if (link && (await realpath(link)) === stage.root) throw new Error('Dream is linked into this profile but its development bridge is not active; refusing uncoordinated publication');
+        if (link && [stage.root, join(stage.root, '.dream-dev/runtime')].includes(await realpath(link))) throw new Error('Dream is linked into this profile but its development bridge is not active; refusing uncoordinated publication');
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      const result = await publishGeneration(stage.root, manifest);
-      await atomicJson(join(stage.root, '.dream-dev/published.json'), { revision, ...result, offline: true });
+      try { await readFile(join(stage.root, '.dream-dev/linked.json')); throw new Error('Linked development mode requires its bridge; refusing offline publication'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (development) {
+        const { publishDevelopment } = await import('./lib/dev-publication.js');
+        const result = await publishDevelopment(stage.root, manifest);
+        await atomicJson(join(stage.root, '.dream-dev/published.json'), { revision, ...result, offline: true });
+      } else {
+        const result = await publishGeneration(stage.root, manifest);
+        await atomicJson(join(stage.root, '.dream-dev/published.json'), { revision, ...result, offline: true });
+      }
     }
   }
   console.log(`[dream:build] ${publish ? 'Published' : 'Validated'} generation ${revision}`);
@@ -81,6 +97,6 @@ async function awaitReceipt(root, revision, signal) {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const stop = new AbortController(); for (const event of ['SIGINT', 'SIGTERM']) process.once(event, () => stop.abort(new Error('Checked build stopped')));
-  try { await runCheckedBuild({ tests: !process.argv.includes('--skip-tests'), publish: !process.argv.includes('--no-publish'), signal: stop.signal }); }
+  try { await runCheckedBuild({ tests: !process.argv.includes('--skip-tests'), publish: !process.argv.includes('--no-publish'), signal: stop.signal, development: process.argv.includes('--prepare-development') }); }
   catch (error) { console.error('[dream:build] Not published:', error.message); process.exitCode = 1; }
 }

@@ -27,11 +27,18 @@ export interface HostEventMap {
   'session/disposed': (session: Session) => void;
   'session/event': (session: Session, event: { type: string; data: unknown; seq?: number; surfaceOp?: unknown; sourceEventSeqs?: readonly number[] }) => void;
 }
+export interface ModelReasoningInfo { efforts: readonly { id: string; name: string; description?: string }[]; defaultEffort?: string }
+export interface ModelInfo { provider: string; id: string; name: string; description?: string; reasoning?: ModelReasoningInfo }
 export interface HostContext extends ToolContext {
  get?(key: 'tokenMeter'): { measure(session: Session): { totalTokens: number; baseline: { kind: 'none' | 'estimated' | 'usage' }; logRevision: number } } | undefined;
  fs: HostFs;
  sandboxPolicy?: { resolve(input: { session: Session }): unknown };
- llm: { prepareCall(config: CallConfig, signal?: AbortSignal): Promise<{ config: CallConfig; stream(input: CallConfig & { messages: { role: 'user'; content: { type: 'text'; text: string }[] }[]; sessionId: string; signal?: AbortSignal }): AsyncIterable<StreamChunk> }> };
+ llm: { prepareCall(config: CallConfig, signal?: AbortSignal): Promise<{ config: CallConfig; stream(input: CallConfig & { messages: { role: 'user'; content: { type: 'text'; text: string }[] }[]; sessionId: string; signal?: AbortSignal }): AsyncIterable<StreamChunk> }>;
+  listProviders?(): { id: string; name: string }[];
+  listModels?(provider: string): Promise<ModelInfo[]>;
+  resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<ModelInfo>;
+  resolveCallConfig?(config: CallConfig, signal?: AbortSignal): Promise<CallConfig>;
+ };
  compaction: { compactNow(agent: Agent, signal?: AbortSignal): Promise<{ compactionId: string } | null> };
  agents: { get(sessionId: string): Agent | undefined };
  effect(callback: () => () => Promise<void>): unknown;

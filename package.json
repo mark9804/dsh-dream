@@ -1,6 +1,6 @@
 {
   "name": "dsh-dream",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Companion-oriented dreaming with agent review, recoverable memory updates and Host compaction.",
   "type": "module",
@@ -42,8 +42,7 @@
     "dev": "node scripts/dev.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "check": "npm run typecheck && node scripts/check.js",
-    "pretest": "npm run build",
-    "test": "node --test tests/*.test.js",
+    "test": "node scripts/checked-build.js --no-publish",
     "predemo": "npm run build",
     "demo": "node scripts/demo.js",
     "prepack": "npm run build",

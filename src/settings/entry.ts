@@ -16,7 +16,7 @@ export function apply(ctx: SettingsContext & SettingsHttpContext & { provide(nam
   const empty = (input: unknown) => {
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) throw new SettingsFailure('INVALID_REQUEST', 'This operation takes no arguments');
   };
-  registerSettingsHttp(ctx, { read: async (input, signal) => { empty(input); return service.read(signal); }, save: service.save, preflight: service.preflight, sessions: service.sessions,
+  registerSettingsHttp(ctx, { read: async (input, signal) => { empty(input); return service.read(signal); }, save: service.save, preflight: service.preflight, sessions: service.sessions, models: service.models,
     messages: service.messages, status: async input => { empty(input); return service.status(); }, 'pick-file': async (input, signal) => { empty(input); return filePicker.pick(signal); }, 'pick-directory': async (input, signal) => {
       empty(input);
       const picker = ctx.get('directoryPicker') as { capability(): { kind: string; pick?(signal: AbortSignal): Promise<string | null> } } | undefined;

@@ -153,6 +153,7 @@ vite.config.ts.timestamp-*
 
 # Local dream development data (never commit real memories)
 .dream-data/
+.dream-dev/
 dsh-memory-backup/
 
 # Generated synthetic tests and local SDK inspection material

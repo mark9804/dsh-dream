@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { GenerationDiagnostics } from './GenerationDiagnostics.js';
+import { ModelsSection } from './ModelsSection.js';
 import type { DreamContextRef, DreamLocale, DreamSettingsApi, DreamSettingsSnapshot, MessageOption, OriginalBinding, Readiness, SessionOption, SettingsPageProps } from './api.js';
 import { draftOf, errorMessage, isTimeoutParts, numericFields, scopeChanged, serializeDraft, stringValue } from './draft.js';
 import { DurationInput } from './DurationInput.js';
@@ -237,6 +238,7 @@ export function createSettingsPage(api: DreamSettingsApi, locale: DreamLocale): 
                 <div className="dream-settings-field--wide"><h3 id={`${id('compactionMode')}-label`} className="dream-settings-label">{t('field_compactionMode')}</h3><ChoiceCards id={id('compactionMode')} value={text(draft.compactionMode)} onChange={value => update('compactionMode', value)} disabled={disabled} options={modeOptions} /></div>
               </FieldSet>
             </section>
+            <ModelsSection api={api} sessionId={text(draft.sessionId) || undefined} draft={draft} errors={errors} disabled={disabled} id={id} onChange={update} t={t} />
             <section data-settings-group="setup" aria-labelledby={id('setup-heading')}>
               <header className="dream-settings-subgroup-heading"><h3 id={id('setup-heading')}>{t('setup')}</h3><p className="dream-settings-description">{t('setupDescription')}</p></header>
               <FieldSet title={t('target')} description={t('targetDescription')}>

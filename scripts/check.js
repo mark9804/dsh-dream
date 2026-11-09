@@ -20,6 +20,6 @@ async function check(directory) {
 }
 // TypeScript sources are checked by tsc in npm run check; JS tests/scripts
 // remain syntax-checked here, including the artifact verification utilities.
-for (const directory of ['tests', 'scripts']) await check(join(root, directory));
+for (const directory of ['tests', 'scripts', 'dev']) await check(join(root, directory));
 if (!checked) throw new Error('No JavaScript files were checked');
 console.log(`Syntax checked ${checked} JavaScript files.`);

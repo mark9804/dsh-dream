@@ -23,7 +23,7 @@ const allowed = path => /^dist\/[a-zA-Z0-9_/-]+\.(?:js|d\.ts)(?:\.map)?$/.test(p
 /** Validate every byte before mutation, then publish inside the caller's HMR queue.
  * Readers see atomic individual files; the queue prevents Host loading a partial generation.
  * Client entry is written last so bundle polling never sees half-written JavaScript. */
-export async function publishGeneration(project, manifest) {
+export async function publishGeneration(project, manifest, { targetRoot = project } = {}) {
   project = await realpath(project); assert.equal(manifest.schemaVersion, 1); assert.equal(manifest.project, project);
   assert.equal(manifest.typecheck, 'passed'); assert.equal(manifest.sourceIntegrity, 'passed'); assert.equal(manifest.artifactIntegrity, 'passed');
   assert.ok(['passed', 'not-requested'].includes(manifest.regressions));
@@ -35,16 +35,18 @@ export async function publishGeneration(project, manifest) {
     const bytes = await readFile(await safePath(staged, path)); assert.equal(sha(bytes), expected, `Validated artifact changed: ${path}`); buffers.set(path, bytes);
   }
   const pkg = JSON.parse(await readFile(join(project, 'package.json'), 'utf8')); assert.equal(pkg.name, 'dsh-dream');
+  targetRoot = resolve(targetRoot); await mkdir(targetRoot, { recursive: true }); targetRoot = await realpath(targetRoot);
+  if (targetRoot !== project) inside(project, targetRoot);
   const changed = [];
   for (const [path, bytes] of [...buffers].sort(([a], [b]) => (a === 'web/client.js' ? 1 : b === 'web/client.js' ? -1 : a.localeCompare(b)))) {
-    const target = await safePath(project, path); let old;
+    const target = await safePath(targetRoot, path); let old;
     try { old = await readFile(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (old && sha(old) === sha(bytes)) continue;
     await mkdir(dirname(target), { recursive: true });
     const temporary = target + '.' + randomUUID() + '.tmp';
     await writeFile(temporary, bytes, { flag: 'wx' });
     // Recheck both exact sibling targets before the atomic replacement.
-    await safePath(project, relative(project, temporary)); await safePath(project, path);
+    await safePath(targetRoot, relative(targetRoot, temporary)); await safePath(targetRoot, path);
     assert.equal(dirname(resolve(temporary)), dirname(resolve(target))); await rename(temporary, target); changed.push(path);
   }
   return { state: 'completed', changed, completedAt: new Date().toISOString(), artifactHash: sha(JSON.stringify(manifest.files)) };
