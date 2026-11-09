@@ -97,6 +97,14 @@ test('controller reports an unhandled recurring error once and does not duplicat
   controller.stop();
 });
 
+test('controller never places private validation quotes in fallback attention notifications', async () => {
+  const clock = controlledClock('2026-10-26T05:30:00Z'), notices = [];
+  const { engine } = fakeEngine({ async dream() { throw Object.assign(new Error('SYNTHETIC_QUOTE_PRIVATE nearest=SYNTHETIC_SOURCE_PRIVATE'), { code: 'GENERATION_VALIDATION_FAILED' }); } });
+  const controller = createController({ config, engine, host: { notify: text => notices.push(text) }, ...clock });
+  controller.start(); await controller.flush(); controller.stop();
+  assert.equal(notices.length, 1); assert.doesNotMatch(notices[0], /SYNTHETIC_.*PRIVATE/); assert.match(notices[0], /任务状态/);
+});
+
 test('stopping before startup work runs leaves no recovery task or timer', async () => {
   const clock = controlledClock('2026-10-26T05:30:00Z');
   const { engine, calls } = fakeEngine();

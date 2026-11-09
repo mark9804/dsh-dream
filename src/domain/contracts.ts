@@ -4,6 +4,7 @@ import { cleanReviewDigest, reviewPolicyVersion } from '../review/isolation.js';
 import { proposalLineage } from '../dream/lineage.js';
 import { requireOriginalEvidence } from '../dream/originals.js';
 import { validateGenerationDiagnostics } from './generation-diagnostics.js';
+import { validateGenerationAttemptDetails } from './generation-attempt.js';
 import type { Snapshot, Proposal, Review, Job, ChangeSet, Change, AcknowledgedTransaction } from '../types.js';
 
 export type { Scope, Source, Snapshot, Proposal, Review, Job, ChangeSet } from '../types.js';
@@ -342,6 +343,12 @@ export function validateJob(input: unknown): Job {
   timestamp(value.createdAt, 'createdAt');
   timestamp(value.updatedAt, 'updatedAt');
   if (value.generationDiagnostics !== undefined) validateGenerationDiagnostics(value.generationDiagnostics);
+  if (value.error?.details !== undefined) {
+    const details = validateGenerationAttemptDetails(value.error.details);
+    requireThat(['GENERATION_VALIDATION_FAILED', 'GENERATION_ATTEMPT_SAVE_FAILED'].includes(value.error.code), 'private attempt details require a validation failure');
+    requireThat(typeof value.error.message === 'string' && value.error.message.length <= 32768, 'validation failure message exceeds its private budget');
+    requireThat(details.archiveState === 'saved' ? value.error.code === 'GENERATION_VALIDATION_FAILED' : value.error.code === 'GENERATION_ATTEMPT_SAVE_FAILED', 'generation archive state/code mismatch');
+  }
   array(value.proposals, 'proposals');
   value.proposals.forEach(proposalRecord);
   unique(value.proposals.map((item) => item.proposalId), 'proposalIds');

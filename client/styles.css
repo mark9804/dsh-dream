@@ -79,6 +79,7 @@
 .dream-settings .dream-settings-switch-thumb { position: absolute; display: block; box-sizing: border-box; inset-inline-start: 2px; top: 2px; width: 14px; min-width: 14px; height: 14px; min-height: 14px; border: 0; padding: 0; margin: 0; border-radius: 50%; background: var(--dream-fg); background-image: none; box-shadow: none; pointer-events: none; transform: translateX(0); transition: transform .12s; }
 .dream-settings .dream-settings-switch[data-checked] > .dream-settings-switch-thumb { transform: translateX(12px); }
 .dream-settings .dream-settings-switch:dir(rtl)[data-checked] > .dream-settings-switch-thumb { transform: translateX(-12px); }
+.dream-settings-validation-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; background: var(--dream-bg); border: 1px solid var(--dream-border); border-radius: 6px; padding: 10px; font-size: 12px; }
 .dream-settings-route { display: flex; flex-wrap: wrap; gap: 5px 12px; border-top: 1px solid var(--dream-border); margin-top: 15px; padding-top: 12px; font-size: 12px; }
 .dream-settings-route > span:first-child { color: var(--dream-muted); }
 .dream-settings-model-catalog { padding: 12px 14px; border: 1px solid var(--dream-border); border-radius: 8px; margin-bottom: 12px; }

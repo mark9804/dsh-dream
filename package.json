@@ -1,6 +1,6 @@
 {
   "name": "dsh-dream",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Companion-oriented dreaming with agent review, recoverable memory updates and Host compaction.",
   "type": "module",

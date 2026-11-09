@@ -5,6 +5,8 @@ import { assertChangeBudget, DEFAULT_CHANGE_BUDGET } from '../domain/budgets.js'
 import type { ChangeBudget } from '../domain/budgets.js';
 import { candidateView } from '../dream/lineage.js';
 import { validateEpisodeDigest } from '../dream/episodes.js';
+import { MAX_GENERATION_ATTEMPT_BYTES, validateGenerationAttempt } from '../domain/generation-attempt.js';
+import type { GenerationAttempt } from '../domain/generation-attempt.js';
 
 import type { Files, Version, Job, DreamResult, Review, Proposal, Manifest, ChangeSet, AfterStep, ReloadSource, ManifestEntry, ReinforcementControl, OriginalSourceVerifier, Scope } from '../types.js';
 
@@ -38,6 +40,10 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
   const jobPath = (id: string) => path('jobs', `${key(id)}.json`);
   const dreamResultPath = (id: string) => path('dreams', 'results', `${key(id)}.json`);
   const transactionPath = (id: string) => path('transactions', key(id), 'manifest.json');
+  const generationAttemptPath = (id: string) => {
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) throw new TypeError('Generation attempt needs a UUID');
+    return path('attempts', `${id}.json`);
+  };
   const locked = <T>(fn: () => Promise<T>) => files.withLock(lockKey!, fn);
 
   async function load(pathname: string) {
@@ -123,6 +129,37 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
       preserveHistory(validateJob(stored.value), next);
       await save(pathname, next, stored.version);
       return next;
+    });
+  }
+
+  /** Private rejected output archive; never read by proposal/review generation. */
+  async function loadGenerationAttempt(attemptId: string, expectedScope?: Scope) {
+    const stored = await files.read(generationAttemptPath(attemptId), { maxBytes: MAX_GENERATION_ATTEMPT_BYTES });
+    if (!stored) return null;
+    if (Buffer.byteLength(stored.content) > MAX_GENERATION_ATTEMPT_BYTES) throw new RangeError('Generation attempt exceeds archive budget');
+    const attempt = validateGenerationAttempt(JSON.parse(stored.content));
+    if (attempt.attemptId !== attemptId || expectedScope && !isDeepStrictEqual(attempt.scope, expectedScope)) throw failure('GENERATION_ATTEMPT_CONFLICT', 'Generation attempt identity or scope mismatch');
+    return attempt;
+  }
+
+  async function saveGenerationAttempt(input: GenerationAttempt): Promise<string> {
+    const attempt = structuredClone(validateGenerationAttempt(input));
+    const pathname = generationAttemptPath(attempt.attemptId);
+    const content = `${JSON.stringify(attempt)}\n`;
+    return locked(async () => {
+      const previous = await files.read(pathname, { maxBytes: MAX_GENERATION_ATTEMPT_BYTES });
+      if (previous) {
+        if (previous.content !== content) throw failure('GENERATION_ATTEMPT_CONFLICT', 'Generation attempt archive is immutable');
+        return pathname;
+      }
+      const job = await loadJob(attempt.jobId);
+      if (!job || job.state !== 'generating' || job.snapshot.snapshotId !== attempt.snapshotId || !isDeepStrictEqual(job.scope, attempt.scope)
+        || job.generationDiagnostics?.attemptId !== attempt.attemptId || job.generationDiagnostics.mode !== attempt.mode) {
+        throw failure('GENERATION_ATTEMPT_CONFLICT', 'Generation attempt owner changed');
+      }
+      await files.mkdir(posix.dirname(pathname));
+      await files.write(pathname, content, null);
+      return pathname;
     });
   }
 
@@ -507,7 +544,7 @@ export function createStore(files: Files, { root = 'state', lockKey, now = () =>
   }
 
   return {
-    loadJob, saveJob, updateJob, loadDreamResult, saveDreamResult, appendDream, appendRejected, commit, recover, cancelUnwritten,
+    loadJob, saveJob, updateJob, loadDreamResult, saveDreamResult, loadGenerationAttempt, saveGenerationAttempt, appendDream, appendRejected, commit, recover, cancelUnwritten,
     async loadGenerationSnapshot(jobId: string) { const stored = await load(dreamResultPath(jobId)); return stored?.value.snapshot ? validateSnapshot(stored.value.snapshot) : null; },
     listJobs,
     async setReinforcement(control: ReinforcementControl) {

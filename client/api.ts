@@ -1,4 +1,5 @@
 import type { GenerationDiagnostics } from '../src/domain/generation-diagnostics.js';
+import type { GenerationAttemptDetails } from '../src/domain/validation-debug.js';
 export interface DreamModelChoice { provider?: string; model?: string; reasoningEffort?: string }
 export interface ModelCatalog {
   groups: { id: string; name: string; models: { id: string; name: string; reasoning?: { efforts: { id: string; name: string; description?: string }[]; defaultEffort?: string } }[] }[];
@@ -10,7 +11,7 @@ export interface DreamSettingsStatus {
   reason?: string;
   model?: { provider: string; model: string; reasoningEffort?: string };
   executor?: 'native' | 'ptc' | 'unknown';
-  jobs?: Array<{ jobId: string; state: string; proposals: number; applied: number; error?: { code: string; message: string }; generationDiagnostics?: GenerationDiagnostics }>;
+  jobs?: Array<{ jobId: string; state: string; proposals: number; applied: number; error?: { code: string; message: string; details?: GenerationAttemptDetails }; generationDiagnostics?: GenerationDiagnostics }>;
 }
 export interface DreamSettingsSnapshot {
   revision: string;

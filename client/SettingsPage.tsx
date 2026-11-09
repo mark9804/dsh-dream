@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { GenerationDiagnostics } from './GenerationDiagnostics.js';
+import { ValidationFailureDetails } from './ValidationFailureDetails.js';
 import { ModelsSection } from './ModelsSection.js';
 import type { DreamContextRef, DreamLocale, DreamSettingsApi, DreamSettingsSnapshot, MessageOption, OriginalBinding, Readiness, SessionOption, SettingsPageProps } from './api.js';
 import { draftOf, errorMessage, isTimeoutParts, numericFields, scopeChanged, serializeDraft, stringValue } from './draft.js';
@@ -226,6 +227,7 @@ export function createSettingsPage(api: DreamSettingsApi, locale: DreamLocale): 
                 <div className="dream-settings-route"><span>{t('runtimeModel')}</span><span className="dream-settings-mono">{snapshot.status.model ? [snapshot.status.model.provider, snapshot.status.model.model, snapshot.status.model.reasoningEffort].filter(Boolean).join(' / ') : t('modelUnknown')}</span></div>
                 <p className="dream-settings-description">{t('modelSampled')}</p>
                 <GenerationDiagnostics jobs={snapshot.status.jobs} language={locale.getSnapshot().active} />
+                <ValidationFailureDetails jobs={snapshot.status.jobs} language={locale.getSnapshot().active} />
               </section>
               <FieldSet title={t('schedule')} description={t('scheduleDescription')}>
                 {(['start', 'end'] as const).map(field => <Field key={field} id={id(field)} label={t(fieldLabel(field))} error={errors[field] ? t(errors[field]!) : undefined}><input id={id(field)} type="time" step={60} className="dream-settings-input" value={text(draft[field])} onChange={event => update(field, event.target.value)} disabled={disabled} aria-invalid={!!errors[field]} /></Field>)}

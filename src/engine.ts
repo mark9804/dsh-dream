@@ -12,7 +12,9 @@ import { attachOriginalSources } from './dream/originals.js';
 import { recallMemory } from './dream/recall.js';
 import { collectRecallSnapshot } from './dream/recall-materials.js';
 import { validateEpisodeDigest } from './dream/episodes.js';
-import { validateGenerationDiagnostics } from './domain/generation-diagnostics.js';
+import { diagnosticCode, validateGenerationDiagnostics } from './domain/generation-diagnostics.js';
+import { validateGenerationAttempt, validateGenerationAttemptDetails } from './domain/generation-attempt.js';
+import type { GenerationAttemptDetails } from './domain/generation-attempt.js';
 import type { DreamTasks } from './dream/tasks.js';
 
 import type { Job, Snapshot, DreamConfig, Scope, Files, Generate, HostControl, Change, ChangeSet, DeliveryField, Delivery, Actor, ReviewRequest, CleanReviewer, State, DreamResult, CompactionInput, ContextPressure, OriginalSourceVerifier, RecallRequest, ReinforcementRequest, AcknowledgedTransaction, ReviewBatchRequest, ReloadReadRequest, ReloadAckInput, ReloadSource, CleanReviewResult } from './types.js';
@@ -55,6 +57,8 @@ function changeSet(job: Job, transactionId: string) {
 export function createEngine({ config, scope, files, store, generate, narratives, cleanReview, verifyOriginal, host, signal,
   now = () => new Date(), id = randomUUID, generationLock = operation => operation() }: EngineOptions) {
   const tasks = new Map<string, Promise<void>>();
+  // Only this invocation's archive callback can authorize private failure details.
+  const validationFailures = new WeakMap<object, { code: string; message: string; details: GenerationAttemptDetails }>();
   let chain = Promise.resolve();
   let generating: Promise<DreamOutcome> | undefined;
   const time = () => now().toISOString();
@@ -151,14 +155,19 @@ export function createEngine({ config, scope, files, store, generate, narratives
 
   async function fail(jobId: string, error: unknown) {
     const job = await get(jobId);
+    const validationFailure = error !== null && typeof error === 'object' ? validationFailures.get(error) : undefined;
     const cancelled = signal?.aborted || errorFields(error).code === 'REST_WINDOW_ENDED';
     if (!TERMINAL_STATES.includes(job.state) && !['failed', 'cancelled'].includes(job.state)) {
       await update(jobId, current => ({ ...transition(current, cancelled ? 'cancelled' : 'failed', {
         now: time(), phase: current.state,
         checkpoint: { state: current.state, transactionId: current.transaction?.transactionId },
-      }), error: { code: errorFields(error).code ?? 'FAILED', message: errorFields(error).message! } }));
+      }), error: validationFailure ? structuredClone(validationFailure) : { code: errorFields(error).code ?? 'FAILED', message: errorFields(error).message! } }));
     }
-    if (!cancelled) await needsAttention(jobId, errorFields(error).message!);
+    if (!cancelled) await needsAttention(jobId, validationFailure
+      ? `生成结果验证失败${validationFailure.details.archiveState === 'failed' ? '，诊断归档未成功' : ''}；attempt ${validationFailure.details.attemptId}`
+      : errorFields(error).code === 'GENERATION_VALIDATION_FAILED' || errorFields(error).code === 'GENERATION_ATTEMPT_SAVE_FAILED'
+        ? '生成结果验证或诊断归档失败，请查看任务状态'
+        : errorFields(error).message!);
     (error as { dreamHandled: boolean }).dreamHandled = true; // Preserve the original thrown object's handled marker.
   }
 
@@ -189,6 +198,8 @@ export function createEngine({ config, scope, files, store, generate, narratives
     if (!persisted) {
       if (!inRestWindow(now(), config)) throw Object.assign(new Error('Dream generation is outside the rest window'), { code: 'REST_WINDOW_ENDED' });
       let attemptId: string | undefined;
+      let archived: { code: string; message: string; details: GenerationAttemptDetails } | undefined;
+      try {
       result = await generate(job.snapshot, job.jobId, { signal: activeSignal, async onDiagnostic(value) {
         const diagnostic = structuredClone(validateGenerationDiagnostics(value));
         if (diagnostic.snapshotId !== job.snapshot.snapshotId) throw new TypeError('Generation diagnostic snapshot mismatch');
@@ -199,7 +210,33 @@ export function createEngine({ config, scope, files, store, generate, narratives
           if (current.generationDiagnostics?.attemptId === diagnostic.attemptId && current.generationDiagnostics.elapsedMs > diagnostic.elapsedMs) throw new Error('Stale generation diagnostic');
           return { ...current, generationDiagnostics: diagnostic };
         });
+      }, async onValidationFailure(value) {
+        const attempt = structuredClone(validateGenerationAttempt(value));
+        const details = { attemptId: attempt.attemptId, stage: attempt.stage,
+          ...(attempt.validation.issue ? { validationIssue: structuredClone(attempt.validation.issue) } : {}) };
+        try {
+          if (attempt.attemptId !== attemptId || attempt.jobId !== job.jobId || attempt.snapshotId !== job.snapshot.snapshotId || !isDeepStrictEqual(attempt.scope, scope)) {
+            throw Object.assign(new Error('Generation attempt identity mismatch'), { code: 'GENERATION_ATTEMPT_CONFLICT' });
+          }
+          // Store checks the live generating owner under its lock. Once started,
+          // this write is awaited even if cancellation arrives meanwhile.
+          const attemptPath = await store.saveGenerationAttempt(attempt);
+          archived = { code: 'GENERATION_VALIDATION_FAILED', message: attempt.validation.message,
+            details: validateGenerationAttemptDetails({ ...details, attemptPath, archiveState: 'saved' }) };
+        } catch (error) {
+          archived = { code: 'GENERATION_ATTEMPT_SAVE_FAILED', message: 'Failed to save private generation validation diagnostic',
+            details: validateGenerationAttemptDetails({ ...details, archiveState: 'failed', archiveErrorCode: diagnosticCode(errorFields(error).code, 'ARCHIVE_WRITE_FAILED') }) };
+          throw Object.assign(new Error(archived.message), { code: archived.code, attemptId: attempt.attemptId, validationIssue: attempt.validation.issue });
+        }
       } });
+      if (archived) throw Object.assign(new Error(archived.message), { code: archived.code });
+      } catch (error) {
+        if (!archived) throw error;
+        const failure = Object.assign(new Error(archived.message), { code: archived.code, details: structuredClone(archived.details),
+          attemptId: archived.details.attemptId, validationIssue: archived.details.validationIssue });
+        validationFailures.set(failure, archived);
+        throw failure;
+      }
       activeSignal?.throwIfAborted();
       if (!inRestWindow(now(), config)) throw Object.assign(new Error('Rest window ended before generation completed'), { code: 'REST_WINDOW_ENDED' });
       if (result.mode !== 'memory-v2') result = { ...result, dreamDate: localDate(now(), config.timeZone) };

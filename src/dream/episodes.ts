@@ -1,4 +1,5 @@
 import { validateSnapshot } from '../domain/contracts.js';
+import { createQuoteValidationIssue, QuoteValidationError } from '../domain/quote-diagnostics.js';
 import type { Model, Snapshot } from '../types.js';
 
 export type EpisodeCategory = 'must-keep' | 'future-useful' | 'relationship' | 'temporary' | 'low-priority';
@@ -60,7 +61,7 @@ export function validateEpisodeDigest(value: unknown, snapshot: Snapshot): Episo
   requireThat([...covered].every(id => !omitted.has(id)) && covered.size + omitted.size === sourceIds.size,
     'episode coverage must partition the snapshot sources');
   const episodeIds = new Set<string>();
-  for (const episode of value.episodes) {
+  for (const [episodeIndex, episode] of value.episodes.entries()) {
     object(episode, ['episodeId', ...episodeKeys], 'episode');
     for (const key of ['episodeId', 'summary', 'when', 'importanceReason']) text(episode[key], `episode.${key}`);
     const episodeId = episode.episodeId as string;
@@ -71,12 +72,14 @@ export function validateEpisodeDigest(value: unknown, snapshot: Snapshot): Episo
     requireThat(categories.includes(episode.category as EpisodeCategory), 'episode.category is invalid');
     requireThat(typeof episode.retention === 'string' && ['durable', 'recent', 'archive-only'].includes(episode.retention), 'episode.retention is invalid');
     requireThat(Array.isArray(episode.evidence) && episode.evidence.length > 0, 'episode requires evidence');
-    for (const evidence of episode.evidence) {
+    for (const [evidenceIndex, evidence] of episode.evidence.entries()) {
       object(evidence, ['sourceId', 'quote'], 'episode evidence');
       text(evidence.sourceId, 'episode evidence.sourceId');
       text(evidence.quote, 'episode evidence.quote');
       const source = snapshot.sources.find(item => item.sourceId === evidence.sourceId);
-      requireThat(source?.content.includes(evidence.quote), 'episode evidence quote is missing from its source');
+      if (!source?.content.includes(evidence.quote)) throw new QuoteValidationError(createQuoteValidationIssue({
+        episodeIndex, evidenceIndex, episodeId, sourceId: evidence.sourceId, source, quote: evidence.quote,
+      }));
       requireThat(covered.has(evidence.sourceId), 'episode evidence source must be declared covered');
     }
   }

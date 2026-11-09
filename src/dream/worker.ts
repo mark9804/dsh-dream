@@ -12,7 +12,7 @@ port.on('message', (message: { id: number; error?: string; code?: string; text: 
   const call = calls.get(message.id);
   if (!call) return;
   calls.delete(message.id);
-  if (message.error) call.reject(Object.assign(new Error(message.error), { code: message.code }));
+  if (message.error) call.reject(Object.assign(new Error(message.error), { code: message.code, modelFailure: true }));
   else call.resolve(message.text);
 });
 
@@ -26,7 +26,8 @@ try {
   const result = await runDreamStages(data.snapshot, data.jobId, model, data.limits);
   port.postMessage({ type: 'result', result, threadId });
 } catch (error) {
-  port.postMessage({ type: 'failure', error: errorFields(error).message, code: errorFields(error).code });
+  const fields = errorFields(error), localValidation = (error as { modelFailure?: unknown })?.modelFailure !== true && error instanceof TypeError;
+  port.postMessage({ type: 'failure', error: fields.message, code: localValidation ? 'GENERATION_VALIDATION_FAILED' : fields.code, localValidation });
 } finally {
   port.close();
 }

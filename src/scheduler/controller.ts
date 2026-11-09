@@ -38,7 +38,10 @@ export function createController({ config, engine, host, signal, now = () => new
     const key = `${errorFields(error).code ?? 'ERROR'}:${errorFields(error).message ?? String(error)}`;
     if (notified.has(key)) return;
     notified.add(key);
-    try { await host.notify(`DSH-Dream 需要处理：${errorFields(error).message ?? String(error)}。请检查插件配置与任务状态，仅向用户说明需要处理的问题。`); }
+    const message = ['GENERATION_VALIDATION_FAILED', 'GENERATION_ATTEMPT_SAVE_FAILED'].includes(errorFields(error).code ?? '')
+      ? '生成结果校验或私密调试归档失败，请查看任务状态中的详细信息'
+      : errorFields(error).message ?? String(error);
+    try { await host.notify(`DSH-Dream 需要处理：${message}。请检查插件配置与任务状态，仅向用户说明需要处理的问题。`); }
     catch { /* The Host may be unavailable; repeated polling must not flood its inbox. */ }
   }
 

@@ -1,6 +1,7 @@
 /** Domain records. External JSON is validated by domain/contracts before use. */
 import type { EpisodeDigest } from './dream/episodes.js';
 import type { GenerationDiagnostics, ModelProgress } from './domain/generation-diagnostics.js';
+import type { GenerationAttempt, GenerationAttemptDetails } from './domain/generation-attempt.js';
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Version = Json;
 export type State = 'queued' | 'collecting' | 'generating' | 'awaiting_review' | 'prepared' | 'applying' | 'applied' | 'awaiting_compaction' | 'compacting' | 'awaiting_reload' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'reviewed_no_changes';
@@ -37,7 +38,7 @@ export type CleanReviewer = (snapshot: Snapshot, proposal: Proposal, options?: {
 export interface Review { schemaVersion: 1; reviewId: string; proposalId: string; jobId: string; reviewer: Actor; decision: Decision; reason: string; reviewedAt: string; proposalSnapshot: Proposal; authority?: CleanReviewAuthority; basis: { scope: Scope; sources: Source[]; candidates?: CandidateView; originalCoverage?: { uncollectedSourceIds: string[] } } }
 export interface Change { targetId: string; before: string; after: string; version: Version }
 export interface ChangeSet { schemaVersion: 1; transactionId: string; jobId: string; proposalIds: string[]; reviewIds: string[]; status: 'prepared' | 'applying' | 'applied'; changes: Change[] }
-export interface ErrorInfo { code: string; message: string }
+export interface ErrorInfo { code: string; message: string; details?: GenerationAttemptDetails }
 export interface DeliveryAttempt { messageId: string; state: 'queued' | 'sent' | 'failed' | 'uncertain'; at: string; sentAt?: string; error?: ErrorInfo }
 export interface Delivery extends DeliveryAttempt { history: DeliveryAttempt[] }
 export type DeliveryField = 'reviewDelivery' | 'reloadDelivery' | 'reportDelivery' | 'attentionDelivery' | 'compactionPauseDelivery' | 'compactionDecisionDelivery';
@@ -75,7 +76,7 @@ export interface FileInfo { type: string; size?: number; version?: Version }
 export interface Files { read(path: string, options?: ReadOptions): Promise<FileContent | null>; write(path: string, content: string, version: Version): Promise<Version>; mkdir(path: string): Promise<void>; list(path: string): Promise<{ name: string; isDirectory: boolean }[]>; stat(path: string): Promise<FileInfo | null>; withLock<T>(key: string, operation: () => Promise<T>): Promise<T> }
 export interface ModelOptions { signal?: AbortSignal; onProgress?: (progress: ModelProgress) => void | Promise<void> }
 export type Model = ((prompt: string, options?: ModelOptions) => Promise<string>) & { capture?(): Model };
-export type Generate = (snapshot: Snapshot, jobId: string, options?: { signal?: AbortSignal; onDiagnostic?: (diagnostic: GenerationDiagnostics) => void | Promise<void> }) => Promise<DreamResult>;
+export type Generate = (snapshot: Snapshot, jobId: string, options?: { signal?: AbortSignal; onDiagnostic?: (diagnostic: GenerationDiagnostics) => void | Promise<void>; onValidationFailure?: (attempt: GenerationAttempt) => void | Promise<void> }) => Promise<DreamResult>;
 export interface Metadata { messageId?: string; purpose?: string; jobId?: string; transactionId?: string }
 export interface HostControl { contextPressure?(): ContextPressure; notify(text: string, metadata?: Metadata): Promise<unknown>; requestReview(text: string, metadata?: Metadata): Promise<unknown>; requestReload(text: string, metadata?: Metadata): Promise<unknown>; waitForIdle(signal?: AbortSignal): Promise<void>; maintain<T>(task: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T>; compact(signal?: AbortSignal): Promise<{ compactionId: string } | null> }
 export interface ManifestEntry { targetId: string; path: string; before: string; after: string; existed: boolean; backup: string | null; done: boolean; writtenVersion?: Version }

@@ -61,6 +61,8 @@ dreamMood可显式给{text,at}时间点心情背景（text最多2048 UTF-8字节
 
 设置页的超时统一以 **InputGroup「分钟＋秒」** 输入，秒默认为 **0**：事实生成／独立审核默认 **15 分钟 0 秒**，ORGANIZE与DEEP共用一次生成总预算；每次独立审核另计。API与已保存配置仍用`timeoutMs`毫秒，显式旧值300000显示为5分钟，不自动迁移。生成阶段诊断仅持久化阶段、耗时、请求UUID、模型路由、首token/正文时间、字节数及可用usage，不保留提示词、生成正文、思维链或原始错误文本；`settledAt`才表示执行器和在途调用实际退出。诊断不授予审核或写入权限，旧任务缺失的阶段不能事后补造。
 
+生成校验失败另保存**私密调试归档** `stateRoot/attempts/<attemptId>.json`：关联job/snapshot/scope、失败阶段、已返回的模型原始正文、校验结果。它与上述content-free阶段诊断分离，不含提示词或思维链，不自动进入后续生成/审核或成为事实证据。普通输出完整保留，单attempt正文总上限2MiB、JSON16MiB；超限有显式truncated、原字节数和SHA256，不假称完整。引用不匹配的错误带episode/evidence索引、原quote、来源路径及同源最相近片段/行号/字符相似度；有界采样和截断会注明，**相似度只用于debug，精确原文校验不放宽**。设置页另有“校验失败详情（私密调试）”，不自动展示整份原始输出；原记录不可覆盖、不自动删除或重试，旧失败无法事后恢复未保存输出。
+
 ### 原始消息核验与强化检索
 
 可配置 `originalSources: [{sourceId, ref: {sessionId, seq, blockIndex, quote}}]` 将文件原句链接到宿主精确消息。默认仅允许目标会话，其他会话须列入 `sourceSessionIds`（最多16个）；最多64个链接，单条原始事件核验预算 `maxOriginalBytes=65536`。插件通过公开sessionQuery.readEvent/traceEvent核对事件身份、角色、原文、替换/派生状态，签入v3审核输入，提交/恢复时重新核验。模型不能经工具伪造这些链接。缺失、过大、不可读或已派生来源明确invalid/unavailable，所覆盖证据不能获批。
